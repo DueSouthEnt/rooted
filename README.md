@@ -114,6 +114,16 @@ The new file is `supabase/migrations/20261115220000_bed_blocks.sql`. It adds a `
 
 The signed-in home page reads the Open-Meteo forecast for the farm’s latitude and longitude (free, no key). If the farm has no pin, the weather card asks you to set a place instead of inventing a temperature.
 
+### Year plan
+
+Run the push once more if you already have the earlier migrations:
+
+```bash
+npx supabase db push --remote
+```
+
+`supabase/migrations/20261115230000_plantings.sql` adds a `plantings` table: sow date, plant-out, bloom window, an optional lift date, and the bed it sits on. Existing crops, beds and tasks stay. No new environment variable. The home page and the year plan both offer “what to sow or plant now” from the farm’s frost dates.
+
 Satellite pictures come from Esri World Imagery, which does not need a key. Attribution is on the map. If you later want a different tile service, set an optional public variable and restart the app:
 
 ```bash

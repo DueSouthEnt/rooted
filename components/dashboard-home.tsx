@@ -1,6 +1,8 @@
 import Link from "next/link";
-import { EmptyFlourish, PageHeader } from "@/components/floral";
+import { EmptyFlourish } from "@/components/floral";
+import { SowNowCard } from "@/components/sow-now";
 import { Button } from "@/components/ui/button";
+import type { SowSuggestion } from "@/lib/schedule";
 import type { Forecast } from "@/lib/weather";
 import type { FarmRecord, TaskRecord } from "@/lib/records";
 
@@ -14,6 +16,7 @@ export function DashboardHome({
   plantedBeds,
   tasks,
   today,
+  suggestions = [],
 }: {
   displayName: string;
   farms: FarmRecord[];
@@ -24,6 +27,7 @@ export function DashboardHome({
   plantedBeds: number;
   tasks: TaskRecord[];
   today: string;
+  suggestions?: SowSuggestion[];
 }) {
   const hour = Number(
     new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "numeric", hourCycle: "h23" }).format(new Date()),
@@ -74,6 +78,8 @@ export function DashboardHome({
       ) : null}
 
       <WeatherCard farm={farm} forecast={forecast} />
+
+      {farm && suggestions.length > 0 ? <SowNowCard farmId={farm.id} suggestions={suggestions} /> : null}
 
       {farm ? (
         <>

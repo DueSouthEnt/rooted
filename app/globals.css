@@ -149,6 +149,27 @@
   border: 0;
 }
 
+.planting-ghost {
+  position: fixed;
+  z-index: 80;
+  transform: translate(-50%, -140%);
+  pointer-events: none;
+  border-radius: 999px;
+  background: #3f5c49;
+  color: #fffaf4;
+  padding: 4px 10px;
+  font-size: 12px;
+  box-shadow: 0 8px 20px rgb(63 92 73 / 25%);
+}
+
+.bed-free {
+  background: color-mix(in oklch, var(--secondary) 80%, white);
+}
+
+.bed-clash {
+  background: color-mix(in oklch, var(--accent) 70%, white);
+}
+
 .leaflet-div-icon.bed-index span {
   display: inline-flex;
   min-width: 1.4rem;

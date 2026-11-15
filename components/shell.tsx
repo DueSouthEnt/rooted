@@ -24,7 +24,7 @@ export function Shell({
   const farmId = match?.[1] ?? (queried && farms.some((farm) => farm.id === queried) ? queried : farms[0]?.id);
   const farm = farms.find((item) => item.id === farmId);
   const base = farmId ? `/app/farms/${farmId}` : null;
-  const wide = pathname.includes("/map");
+  const wide = /\/(map|timeline|plan|harvest)/.test(pathname);
 
   const groups = [
     {
@@ -35,28 +35,36 @@ export function Shell({
     },
     {
       title: "Overview",
-      links: [
-        { href: farmId ? `/app?farm=${farmId}` : "/app", label: "Dashboard" },
-        ...(base
-          ? [
-              { href: `${base}/map`, label: "Farm map" },
-              { href: `${base}/week`, label: "This week" },
-            ]
-          : []),
-      ],
+      links: [{ href: farmId ? `/app?farm=${farmId}` : "/app", label: "Dashboard" }],
     },
     {
-      title: "Growing",
+      title: "The year",
       links: base
         ? [
-            { href: `${base}/flowers`, label: "Crop library" },
+            { href: `${base}/plan`, label: "Game plan" },
+            { href: `${base}/timeline`, label: "Year plan" },
+            { href: `${base}/harvest`, label: "Harvest" },
+            { href: `${base}/week`, label: "Tasks" },
+          ]
+        : [],
+    },
+    {
+      title: "The ground",
+      links: base
+        ? [
+            { href: `${base}/map`, label: "Farm map" },
             { href: `${base}/beds`, label: "Beds" },
           ]
         : [],
     },
     {
+      title: "Flowers",
+      links: base ? [{ href: `${base}/flowers`, label: "What will grow" }] : [],
+    },
+    {
       title: "Operations",
       links: [
+        ...(base ? [{ href: `${base}/place`, label: "Frost dates" }] : []),
         { href: "/app/guide", label: "What the words mean" },
         { href: "/app/settings", label: "Settings" },
       ],
@@ -66,10 +74,10 @@ export function Shell({
   const mobile = base
     ? [
         { href: `/app?farm=${farmId}`, label: "Home" },
+        { href: `${base}/timeline`, label: "Year" },
+        { href: `${base}/plan`, label: "Plan" },
         { href: `${base}/map`, label: "Map" },
-        { href: `${base}/beds`, label: "Beds" },
-        { href: `${base}/week`, label: "Week" },
-        { href: `${base}/flowers`, label: "Flowers" },
+        { href: `${base}/week`, label: "Tasks" },
       ]
     : [];
 

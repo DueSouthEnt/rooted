@@ -1,7 +1,8 @@
 import { DashboardHome } from "@/components/dashboard-home";
 import { listFarms } from "@/lib/actions";
 import { todayISO } from "@/lib/dates";
-import { loadFarm, loadTasks } from "@/lib/records";
+import { loadFarm, loadPlantings, loadTasks } from "@/lib/records";
+import { sowNow } from "@/lib/schedule";
 import { fetchForecast } from "@/lib/weather";
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ farm?: string }> }) {
@@ -38,6 +39,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const forecast =
     farm.latitude != null && farm.longitude != null ? await fetchForecast(farm.latitude, farm.longitude) : null;
   const planted = new Set(loaded.plants.map((plant) => plant.bed_id));
+  const plantingRows = await loadPlantings(loaded.supabase, farm.id);
+  const already = new Set(plantingRows.map((row) => row.flower_slug));
+  const suggestions = loaded.site ? sowNow(loaded.flowers, loaded.site, todayISO()).filter((item) => !already.has(item.flower.slug)) : [];
 
   return (
     <DashboardHome
@@ -50,6 +54,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       plantedBeds={loaded.beds.filter((bed) => planted.has(bed.id)).length}
       tasks={tasks}
       today={todayISO()}
+      suggestions={suggestions}
     />
   );
 }
