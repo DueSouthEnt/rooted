@@ -94,6 +94,14 @@ export interface PlantingRecord {
   spans_years: boolean;
   bed_id: string | null;
   season_year: number;
+  beds_needed?: number;
+  days_to_maturity?: number | null;
+  days_in_nursery?: number | null;
+  bloom_weeks?: number | null;
+  spacing_cm?: number | null;
+  bed_length_m?: number | null;
+  notes?: string | null;
+  planting_beds?: { bed_id: string }[] | null;
 }
 
 export interface TaskRecord {
@@ -201,7 +209,7 @@ export async function loadFarm(farmId: string) {
 }
 
 export async function loadPlantings(supabase: Awaited<ReturnType<typeof createClient>>, farmId: string) {
-  const { data, error } = await supabase.from("plantings").select("*").eq("farm_id", farmId).order("field_date");
+  const { data, error } = await supabase.from("plantings").select("*, planting_beds(bed_id)").eq("farm_id", farmId).order("field_date");
   if (error) throw new Error(error.message);
   return (data ?? []) as PlantingRecord[];
 }

@@ -1,26 +1,28 @@
 import { YearTimeline } from "@/components/year-timeline";
-import { todayISO } from "@/lib/dates";
+import { diffDays, todayISO } from "@/lib/dates";
 import { toPlantingDates } from "@/lib/plan-view";
+import { recommend } from "@/lib/recommend";
 import { loadFarm, loadPlantings } from "@/lib/records";
-import { sowNow } from "@/lib/schedule";
+import { scheduleFlower, sowNow } from "@/lib/schedule";
 
-export default async function TimelinePage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ farmId: string }>;
-  searchParams: Promise<{ group?: string; place?: string }>;
-}) {
+export default async function TimelinePage({ params }: { params: Promise<{ farmId: string }> }) {
   const { farmId } = await params;
-  const query = await searchParams;
   const loaded = await loadFarm(farmId);
   const rows = await loadPlantings(loaded.supabase, farmId);
   const plantings = rows.flatMap((row) => {
     const dates = toPlantingDates(row, loaded.flowers);
     return dates ? [dates] : [];
   });
-  const planted = new Set(plantings.map((item) => item.flowerSlug));
-  const suggestions = loaded.site ? sowNow(loaded.flowers, loaded.site, todayISO()).filter((item) => !planted.has(item.flower.slug)) : [];
+  const suggestions = loaded.site ? sowNow(loaded.flowers, loaded.site, todayISO()) : [];
+  const quickCrops = loaded.site
+    ? recommend(loaded.flowers, loaded.site)
+        .filter((item) => item.fit !== "risky" && (item.flower.lifeCycle === "annual" || item.flower.lifeCycle === "biennial"))
+        .slice(0, 12)
+        .map((item) => {
+          const window = scheduleFlower(item.flower, loaded.site!);
+          return { name: item.flower.commonName, slug: item.flower.slug, days: diffDays(window.fieldDate, window.bloomEnd) + 1, window };
+        })
+    : [];
   const blockNames = new Map(loaded.blocks.map((block) => [block.id, block.name]));
   return (
     <YearTimeline
@@ -31,8 +33,12 @@ export default async function TimelinePage({
         name: bed.name,
         blockId: bed.block_id,
         blockName: bed.block_id ? blockNames.get(bed.block_id) ?? null : null,
+        blockIndex: bed.block_index,
       }))}
       suggestions={suggestions}
+      quickCrops={quickCrops}
+      flowers={loaded.flowers}
+      site={loaded.site}
       season={loaded.farm.season_year}
       today={todayISO()}
       lastSpring={
@@ -45,8 +51,6 @@ export default async function TimelinePage({
           ? `${loaded.farm.season_year}-${String(loaded.farm.first_autumn_month).padStart(2, "0")}-${String(loaded.farm.first_autumn_day).padStart(2, "0")}`
           : null
       }
-      initialGroup={query.group === "bed" ? "bed" : "flower"}
-      placeId={query.place ?? null}
     />
   );
 }

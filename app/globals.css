@@ -170,6 +170,10 @@
   background: color-mix(in oklch, var(--accent) 70%, white);
 }
 
+.bed-dim {
+  opacity: 0.38;
+}
+
 .leaflet-div-icon.bed-index span {
   display: inline-flex;
   min-width: 1.4rem;

@@ -6,7 +6,8 @@ import { redirect } from "next/navigation";
 import type { Flower } from "@/lib/flower";
 import { isRhsRating } from "@/lib/hardiness";
 import { packedSpanM, reflowBlock } from "@/lib/blocks";
-import { clashOnBed, isPlantingMethod, shiftDates, tasksForPlanting, type PlantingDates, type PlantingMethod } from "@/lib/schedule";
+import { assignedBeds, freeBedIds, groundSpan } from "@/lib/occupancy";
+import { isPlantingMethod, shiftDates, tasksForPlanting, type PlantingDates, type PlantingMethod } from "@/lib/schedule";
 import type { BedRectangle, FarmBoundary, LngLat } from "@/lib/geo";
 import { destination, isBedRectangle, isFarmBoundary, toCentimetres } from "@/lib/geo";
 import { loadFarm, loadPlantings, loadProfile, requireUser, type FarmRecord, type PlantingRecord } from "@/lib/records";
@@ -600,8 +601,21 @@ function asDates(row: PlantingRecord, name: string, colour: string): PlantingDat
     liftDate: row.lift_date,
     firstBloomYear: row.first_bloom_year,
     spansYears: row.spans_years,
-    bedId: row.bed_id,
+    bedId: row.bed_id ?? row.planting_beds?.[0]?.bed_id ?? null,
+    bedIds: row.planting_beds?.map((item) => item.bed_id) ?? (row.bed_id ? [row.bed_id] : []),
+    bedsNeeded: row.beds_needed ?? 1,
+    daysToMaturity: row.days_to_maturity ?? undefined,
+    daysInNursery: row.days_in_nursery ?? undefined,
+    bloomWeeks: row.bloom_weeks ?? undefined,
+    spacingCm: row.spacing_cm ?? undefined,
+    bedLengthM: row.bed_length_m ?? undefined,
+    notes: row.notes ?? "",
   };
+}
+
+function occupiedEnd(planting: PlantingDates): string {
+  const year = Number(planting.fieldDate.slice(0, 4));
+  return groundSpan(planting, year)?.end ?? (planting.liftDate && planting.liftDate > planting.bloomEnd ? planting.liftDate : planting.bloomEnd);
 }
 
 function revalidateFarm(farmId: string) {
@@ -609,10 +623,39 @@ function revalidateFarm(farmId: string) {
   revalidatePath(`/app/farms/${farmId}`);
   revalidatePath(`/app/farms/${farmId}/timeline`);
   revalidatePath(`/app/farms/${farmId}/plan`);
+  revalidatePath(`/app/farms/${farmId}/plants`);
   revalidatePath(`/app/farms/${farmId}/harvest`);
   revalidatePath(`/app/farms/${farmId}/week`);
   revalidatePath(`/app/farms/${farmId}/map`);
   revalidatePath(`/app/farms/${farmId}/beds`);
+}
+
+async function writeBeds(
+  supabase: Awaited<ReturnType<typeof loadFarm>>["supabase"],
+  plantingId: string,
+  flowerSlug: string,
+  previous: string[],
+  next: string[],
+  rows: PlantingRecord[],
+) {
+  await supabase.from("planting_beds").delete().eq("planting_id", plantingId);
+  if (next.length) {
+    await supabase.from("planting_beds").insert(next.map((bedId) => ({ planting_id: plantingId, bed_id: bedId })));
+  }
+  await supabase.from("plantings").update({ bed_id: next[0] ?? null }).eq("id", plantingId);
+  for (const bedId of previous) {
+    if (next.includes(bedId)) continue;
+    const still = rows.some(
+      (row) =>
+        row.id !== plantingId &&
+        row.flower_slug === flowerSlug &&
+        (row.bed_id === bedId || row.planting_beds?.some((item) => item.bed_id === bedId)),
+    );
+    if (!still) await supabase.from("bed_plants").delete().eq("bed_id", bedId).eq("flower_slug", flowerSlug);
+  }
+  for (const bedId of next) {
+    await supabase.from("bed_plants").upsert({ bed_id: bedId, flower_slug: flowerSlug }, { onConflict: "bed_id,flower_slug" });
+  }
 }
 
 export async function addPlanting(
@@ -629,24 +672,29 @@ export async function addPlanting(
     firstBloomYear: number;
     spansYears: boolean;
     bedId?: string | null;
+    bedIds?: string[];
+    bedsNeeded?: number;
+    daysToMaturity?: number;
+    daysInNursery?: number;
+    bloomWeeks?: number;
+    spacingCm?: number;
+    bedLengthM?: number;
+    notes?: string;
   },
 ) {
   const { supabase, flowers, farm, beds } = await loadFarm(farmId);
   const flower = flowers.find((item) => item.slug === input.flowerSlug);
   if (!flower) return { error: "That flower isn't in the catalogue." };
   if (!input.fieldDate || !input.bloomStart || !input.bloomEnd) return { error: "A planting needs a plant-out date and a bloom window." };
-  if (input.bedId && !beds.some((bed) => bed.id === input.bedId)) return { error: "That bed isn't on this farm." };
+  const wanted = input.bedIds ?? (input.bedId ? [input.bedId] : []);
+  if (wanted.some((bedId) => !beds.some((bed) => bed.id === bedId))) return { error: "That bed isn't on this farm." };
   const rows = await loadPlantings(supabase, farmId);
   const dated = rows.map((row) => asDates(row, flower.commonName, flower.colour));
-  if (input.bedId) {
-    const end = input.liftDate && input.liftDate > input.bloomEnd ? input.liftDate : input.bloomEnd;
-    const clash = clashOnBed(
-      dated.map((row) => ({ ...row, bedId: row.bedId })),
-      input.bedId,
-      input.fieldDate,
-      end,
-    );
-    if (clash) return { error: `${clash.flowerName} already has that bed from ${clash.fieldDate} until ${clash.bloomEnd}.` };
+  if (wanted.length) {
+    const draft = { ...dated[0], id: "new", fieldDate: input.fieldDate, bloomEnd: input.bloomEnd, liftDate: input.liftDate, spansYears: input.spansYears, method: input.method, bedId: wanted[0], bedIds: wanted };
+    const end = occupiedEnd({ ...draft, flowerName: flower.commonName, flowerSlug: flower.slug, colour: flower.colour, variety: input.variety, nurseryStart: input.nurseryStart, bloomStart: input.bloomStart, firstBloomYear: input.firstBloomYear });
+    const free = freeBedIds(dated, wanted, input.fieldDate, end);
+    if (wanted.some((bedId) => !free.includes(bedId))) return { error: "One of those beds is already planted for the whole time this would be in the ground." };
   }
   const { data, error } = await supabase
     .from("plantings")
@@ -662,7 +710,14 @@ export async function addPlanting(
       lift_date: input.liftDate,
       first_bloom_year: input.firstBloomYear,
       spans_years: input.spansYears,
-      bed_id: input.bedId || null,
+      bed_id: wanted[0] ?? null,
+      beds_needed: input.bedsNeeded ?? 1,
+      days_to_maturity: input.daysToMaturity ?? null,
+      days_in_nursery: input.daysInNursery ?? null,
+      bloom_weeks: input.bloomWeeks ?? null,
+      spacing_cm: input.spacingCm ?? null,
+      bed_length_m: input.bedLengthM ?? null,
+      notes: input.notes ?? "",
       season_year: farm.season_year,
     })
     .select("id")
@@ -677,33 +732,36 @@ export async function addPlanting(
       successions: 1,
     });
   }
-  if (input.bedId) {
-    await supabase.from("bed_plants").upsert({ bed_id: input.bedId, flower_slug: flower.slug }, { onConflict: "bed_id,flower_slug" });
-  }
+  if (wanted.length) await writeBeds(supabase, data.id as string, flower.slug, [], wanted, rows);
   await refreshTasks(farmId);
   revalidateFarm(farmId);
   return { id: data.id as string };
 }
 
-export async function assignPlantingBed(farmId: string, plantingId: string, bedId: string) {
+export async function assignPlantingBeds(farmId: string, plantingId: string, bedIds: string[]) {
   const { supabase, flowers, beds } = await loadFarm(farmId);
-  if (!beds.some((bed) => bed.id === bedId)) return { error: "That bed isn't on this farm." };
+  if (bedIds.some((bedId) => !beds.some((bed) => bed.id === bedId))) return { error: "That bed isn't on this farm." };
   const rows = await loadPlantings(supabase, farmId);
   const row = rows.find((item) => item.id === plantingId);
   if (!row) return { error: "That planting has gone." };
-  const flower = flowers.find((item) => item.slug === row.flower_slug);
-  const dated = rows.map((item) => asDates(item, flower?.commonName ?? item.flower_slug, flower?.colour ?? "#f7d5dc"));
+  const bySlug = new Map(flowers.map((flower) => [flower.slug, flower]));
+  const dated = rows.map((item) => {
+    const flower = bySlug.get(item.flower_slug);
+    return asDates(item, flower?.commonName ?? item.flower_slug, flower?.colour ?? "#f7d5dc");
+  });
   const current = dated.find((item) => item.id === plantingId)!;
-  const end = current.liftDate && current.liftDate > current.bloomEnd ? current.liftDate : current.bloomEnd;
-  const clash = clashOnBed(dated, bedId, current.fieldDate, end, plantingId);
-  if (clash) {
-    return { error: `${clash.flowerName} is already on that bed until ${clash.bloomEnd}. Pick a free bed, or move one of them in time.` };
+  const free = freeBedIds(dated, bedIds, current.fieldDate, occupiedEnd(current), plantingId);
+  if (bedIds.some((bedId) => !free.includes(bedId))) {
+    return { error: "That bed is already planted for the whole time this one is in the ground." };
   }
-  await supabase.from("plantings").update({ bed_id: bedId }).eq("id", plantingId).eq("farm_id", farmId);
-  await supabase.from("bed_plants").upsert({ bed_id: bedId, flower_slug: row.flower_slug }, { onConflict: "bed_id,flower_slug" });
+  await writeBeds(supabase, plantingId, row.flower_slug, assignedBeds(current), bedIds, rows);
   await refreshTasks(farmId);
   revalidateFarm(farmId);
   return { ok: true as const };
+}
+
+export async function assignPlantingBed(farmId: string, plantingId: string, bedId: string) {
+  return assignPlantingBeds(farmId, plantingId, [bedId]);
 }
 
 export async function clearPlantingBed(farmId: string, plantingId: string) {
@@ -711,11 +769,8 @@ export async function clearPlantingBed(farmId: string, plantingId: string) {
   const rows = await loadPlantings(supabase, farmId);
   const row = rows.find((item) => item.id === plantingId);
   if (!row) return { error: "That planting has gone." };
-  await supabase.from("plantings").update({ bed_id: null }).eq("id", plantingId).eq("farm_id", farmId);
-  if (row.bed_id) {
-    const still = rows.some((item) => item.id !== plantingId && item.bed_id === row.bed_id && item.flower_slug === row.flower_slug);
-    if (!still) await supabase.from("bed_plants").delete().eq("bed_id", row.bed_id).eq("flower_slug", row.flower_slug);
-  }
+  const previous = row.planting_beds?.map((item) => item.bed_id) ?? (row.bed_id ? [row.bed_id] : []);
+  await writeBeds(supabase, plantingId, row.flower_slug, previous, [], rows);
   await refreshTasks(farmId);
   revalidateFarm(farmId);
   return { ok: true as const };
@@ -728,12 +783,14 @@ export async function shiftPlanting(farmId: string, plantingId: string, days: nu
   const row = rows.find((item) => item.id === plantingId);
   if (!row) return { error: "That planting has gone." };
   const flower = flowers.find((item) => item.slug === row.flower_slug);
-  const moved = shiftDates(asDates(row, flower?.commonName ?? row.flower_slug, flower?.colour ?? "#f7d5dc"), Math.round(days));
-  if (row.bed_id) {
+  const current = asDates(row, flower?.commonName ?? row.flower_slug, flower?.colour ?? "#f7d5dc");
+  const moved = shiftDates(current, Math.round(days));
+  const bedsHeld = assignedBeds(current);
+  if (bedsHeld.length) {
     const dated = rows.map((item) => asDates(item, flower?.commonName ?? item.flower_slug, flower?.colour ?? "#f7d5dc"));
-    const end = moved.liftDate && moved.liftDate > moved.bloomEnd ? moved.liftDate : moved.bloomEnd;
-    const clash = clashOnBed(dated, row.bed_id, moved.fieldDate, end, plantingId);
-    if (clash) return { error: `That shift lands on ${clash.flowerName}. The bed is taken.` };
+    const end = occupiedEnd(moved);
+    const free = freeBedIds(dated, bedsHeld, moved.fieldDate, end, plantingId);
+    if (bedsHeld.some((bedId) => !free.includes(bedId))) return { error: "That shift lands on a bed that is already planted." };
   }
   await supabase
     .from("plantings")
@@ -752,14 +809,85 @@ export async function shiftPlanting(farmId: string, plantingId: string, days: nu
   return { ok: true as const };
 }
 
+export async function updatePlanting(
+  farmId: string,
+  plantingId: string,
+  input: {
+    variety: string;
+    method: PlantingMethod;
+    nurseryStart: string | null;
+    fieldDate: string;
+    bloomStart: string;
+    bloomEnd: string;
+    liftDate: string | null;
+    firstBloomYear: number;
+    spansYears: boolean;
+    bedsNeeded?: number;
+    daysToMaturity?: number;
+    daysInNursery?: number;
+    bloomWeeks?: number;
+    spacingCm?: number;
+    bedLengthM?: number;
+    notes?: string;
+  },
+) {
+  const { supabase, flowers } = await loadFarm(farmId);
+  const rows = await loadPlantings(supabase, farmId);
+  const row = rows.find((item) => item.id === plantingId);
+  if (!row) return { error: "That planting has gone." };
+  const flower = flowers.find((item) => item.slug === row.flower_slug);
+  const dated = rows.map((item) => asDates(item, flower?.commonName ?? item.flower_slug, flower?.colour ?? "#f7d5dc"));
+  const current = dated.find((item) => item.id === plantingId)!;
+  const next = { ...current, ...input, bedId: current.bedId, bedIds: current.bedIds };
+  const held = assignedBeds(current);
+  if (held.length) {
+    const end = occupiedEnd(next);
+    const free = freeBedIds(dated, held, next.fieldDate, end, plantingId);
+    if (held.some((bedId) => !free.includes(bedId))) {
+      return { error: "Those dates clash with something already in that bed. Shorten the bloom, or take it off the bed first." };
+    }
+  }
+  await supabase
+    .from("plantings")
+    .update({
+      variety: input.variety,
+      method: input.method,
+      nursery_start: input.nurseryStart,
+      field_date: input.fieldDate,
+      bloom_start: input.bloomStart,
+      bloom_end: input.bloomEnd,
+      lift_date: input.liftDate,
+      first_bloom_year: input.firstBloomYear,
+      spans_years: input.spansYears,
+      beds_needed: input.bedsNeeded ?? current.bedsNeeded ?? 1,
+      days_to_maturity: input.daysToMaturity ?? null,
+      days_in_nursery: input.daysInNursery ?? null,
+      bloom_weeks: input.bloomWeeks ?? null,
+      spacing_cm: input.spacingCm ?? null,
+      bed_length_m: input.bedLengthM ?? null,
+      notes: input.notes ?? "",
+    })
+    .eq("id", plantingId)
+    .eq("farm_id", farmId);
+  await refreshTasks(farmId);
+  revalidateFarm(farmId);
+  return { ok: true as const };
+}
+
 export async function deletePlanting(farmId: string, plantingId: string) {
   const { supabase } = await loadFarm(farmId);
   const rows = await loadPlantings(supabase, farmId);
   const row = rows.find((item) => item.id === plantingId);
   await supabase.from("plantings").delete().eq("id", plantingId).eq("farm_id", farmId);
-  if (row?.bed_id) {
-    const still = rows.some((item) => item.id !== plantingId && item.bed_id === row.bed_id && item.flower_slug === row.flower_slug);
-    if (!still) await supabase.from("bed_plants").delete().eq("bed_id", row.bed_id).eq("flower_slug", row.flower_slug);
+  const previous = row?.planting_beds?.map((item) => item.bed_id) ?? (row?.bed_id ? [row.bed_id] : []);
+  for (const bedId of previous) {
+    const still = rows.some(
+      (item) =>
+        item.id !== plantingId &&
+        item.flower_slug === row?.flower_slug &&
+        (item.bed_id === bedId || item.planting_beds?.some((link) => link.bed_id === bedId)),
+    );
+    if (!still && row) await supabase.from("bed_plants").delete().eq("bed_id", bedId).eq("flower_slug", row.flower_slug);
   }
   await refreshTasks(farmId);
   revalidateFarm(farmId);

@@ -41,6 +41,7 @@ export function Shell({
       title: "The year",
       links: base
         ? [
+            { href: `${base}/plants`, label: "Plants" },
             { href: `${base}/plan`, label: "Game plan" },
             { href: `${base}/timeline`, label: "Year plan" },
             { href: `${base}/harvest`, label: "Harvest" },

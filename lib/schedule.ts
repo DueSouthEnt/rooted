@@ -33,6 +33,14 @@ export interface PlantingDates {
   firstBloomYear: number;
   spansYears: boolean;
   bedId: string | null;
+  bedIds?: string[];
+  bedsNeeded?: number;
+  daysToMaturity?: number;
+  daysInNursery?: number;
+  bloomWeeks?: number;
+  spacingCm?: number;
+  bedLengthM?: number;
+  notes?: string;
 }
 
 export interface SowSuggestion {

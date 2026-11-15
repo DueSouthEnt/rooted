@@ -20,5 +20,13 @@ export function toPlantingDates(row: PlantingRecord, flowers: Flower[]): Plantin
     firstBloomYear: row.first_bloom_year,
     spansYears: row.spans_years,
     bedId: row.bed_id,
+    bedIds: row.planting_beds?.map((item) => item.bed_id) ?? (row.bed_id ? [row.bed_id] : []),
+    bedsNeeded: row.beds_needed ?? 1,
+    daysToMaturity: row.days_to_maturity ?? undefined,
+    daysInNursery: row.days_in_nursery ?? undefined,
+    bloomWeeks: row.bloom_weeks ?? undefined,
+    spacingCm: row.spacing_cm ?? undefined,
+    bedLengthM: row.bed_length_m ?? undefined,
+    notes: row.notes ?? "",
   };
 }

@@ -124,6 +124,8 @@ npx supabase db push --remote
 
 `supabase/migrations/20261115230000_plantings.sql` adds a `plantings` table: sow date, plant-out, bloom window, an optional lift date, and the bed it sits on. Existing crops, beds and tasks stay. No new environment variable. The home page and the year plan both offer “what to sow or plant now” from the farm’s frost dates.
 
+`supabase/migrations/20261115240000_planting_beds.sql` lets one planting occupy several neighbouring beds, and stores days to maturity, nursery weeks, spacing, bed length and notes from the planting dialog. Run the push again. No new secret.
+
 Satellite pictures come from Esri World Imagery, which does not need a key. Attribution is on the map. If you later want a different tile service, set an optional public variable and restart the app:
 
 ```bash
