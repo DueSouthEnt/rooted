@@ -4,6 +4,7 @@ import type { Flower } from "@/lib/flower";
 import { planningWindow, type Hemisphere, type Summer } from "@/lib/climate";
 import type { RhsRating } from "@/lib/hardiness";
 import { isRhsRating } from "@/lib/hardiness";
+import type { BedRectangle, FarmBoundary } from "@/lib/geo";
 import type { SitePlan } from "@/lib/tasks";
 import { createClient } from "@/lib/supabase/server";
 
@@ -33,6 +34,7 @@ export interface FarmRecord {
   frost_source: string | null;
   frost_note: string | null;
   plan_top: "north" | "east" | "south" | "west";
+  boundary: FarmBoundary | null;
 }
 
 export interface CropRecord {
@@ -50,6 +52,7 @@ export interface BedRecord {
   bed_kind: "annual" | "perennial" | "bulb";
   position_x: number;
   position_y: number;
+  geometry: BedRectangle | null;
 }
 
 export interface BedPlantRecord {

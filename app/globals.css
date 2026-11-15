@@ -49,24 +49,24 @@
 }
 
 :root {
-  --background: #f3efe4;
-  --foreground: #1e1a14;
-  --card: #fffdf8;
-  --card-foreground: #1e1a14;
-  --popover: #fffdf8;
-  --popover-foreground: #1e1a14;
-  --primary: #2f4a38;
-  --primary-foreground: #f6f3ea;
-  --secondary: #efe7d6;
-  --secondary-foreground: #1e1a14;
-  --muted: #efe7d6;
-  --muted-foreground: #5c564c;
-  --accent: #f3e2cf;
-  --accent-foreground: #1e1a14;
-  --destructive: #b55233;
-  --border: #ddd4c2;
-  --input: #cfc6b2;
-  --ring: #2f4a38;
+  --background: #f6f0e6;
+  --foreground: #2c2622;
+  --card: #fffaf4;
+  --card-foreground: #2c2622;
+  --popover: #fffaf4;
+  --popover-foreground: #2c2622;
+  --primary: #3f5c49;
+  --primary-foreground: #f8f3ea;
+  --secondary: #f4e4e1;
+  --secondary-foreground: #2c2622;
+  --muted: #efe6d8;
+  --muted-foreground: #6a5f56;
+  --accent: #f7d5dc;
+  --accent-foreground: #2c2622;
+  --destructive: #a34b45;
+  --border: #e4d5c8;
+  --input: #d9cbbd;
+  --ring: #3f5c49;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -127,4 +127,19 @@
   html {
     @apply font-sans;
   }
+}
+
+.bed-label {
+  border: 1px solid #e4d5c8 !important;
+  border-radius: 8px !important;
+  background: rgb(255 250 244 / 92%) !important;
+  color: #2c2622 !important;
+  box-shadow: none !important;
+  font-size: 12px;
+  line-height: 1.35;
+  padding: 4px 6px;
+}
+
+.leaflet-tooltip.bed-label::before {
+  display: none;
 }

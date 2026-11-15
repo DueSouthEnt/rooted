@@ -5,6 +5,8 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import type { Flower } from "@/lib/flower";
 import { isRhsRating } from "@/lib/hardiness";
+import type { BedRectangle, FarmBoundary } from "@/lib/geo";
+import { isBedRectangle, isFarmBoundary, toCentimetres } from "@/lib/geo";
 import { loadFarm, loadProfile, requireUser, type FarmRecord } from "@/lib/records";
 import { farmToSite } from "@/lib/records";
 import { createClient } from "@/lib/supabase/server";
@@ -283,25 +285,91 @@ export async function addBed(farmId: string, _prev: ActionState, formData: FormD
   });
   if (error) return { error: "Couldn't add that bed." };
   revalidatePath(`/app/farms/${farmId}/beds`);
+  revalidatePath(`/app/farms/${farmId}/map`);
   return { message: "Bed added." };
+}
+
+export async function saveFarmBoundary(farmId: string, boundary: FarmBoundary | null) {
+  const { supabase } = await requireUser();
+  if (boundary && !isFarmBoundary(boundary)) {
+    return { error: "That outline needs at least three corners." };
+  }
+  const { error } = await supabase.from("farms").update({ boundary }).eq("id", farmId);
+  if (error) return { error: "Couldn't save the farm outline." };
+  revalidatePath(`/app/farms/${farmId}/map`);
+  return { ok: true };
+}
+
+export async function saveMappedBed(
+  farmId: string,
+  input: { name: string; bedKind: string; geometry: BedRectangle },
+) {
+  const { supabase } = await requireUser();
+  if (!isBedRectangle(input.geometry)) return { error: "That shape isn't a bed yet." };
+  const { lengthCm, widthCm } = toCentimetres(input.geometry);
+  if (lengthCm < 40 || widthCm < 40 || lengthCm > 200000 || widthCm > 200000) {
+    return { error: "Beds on the map need to be at least 40 cm on each side, and no longer than 2 km." };
+  }
+  const kind = input.bedKind === "perennial" || input.bedKind === "bulb" ? input.bedKind : "annual";
+  const name = input.name.trim() || "Bed";
+  const { count } = await supabase.from("beds").select("id", { count: "exact", head: true }).eq("farm_id", farmId);
+  const { data, error } = await supabase
+    .from("beds")
+    .insert({
+      farm_id: farmId,
+      name,
+      length_cm: lengthCm,
+      width_cm: widthCm,
+      bed_kind: kind,
+      geometry: input.geometry,
+      position_y: (count ?? 0) * 2,
+    })
+    .select("id")
+    .single();
+  if (error || !data) return { error: "Couldn't save that bed." };
+  revalidatePath(`/app/farms/${farmId}/beds`);
+  revalidatePath(`/app/farms/${farmId}/map`);
+  return { id: data.id as string };
+}
+
+export async function updateMappedBed(
+  farmId: string,
+  bedId: string,
+  geometry: BedRectangle,
+) {
+  const { supabase } = await requireUser();
+  if (!isBedRectangle(geometry)) return { error: "That shape isn't a bed." };
+  const { lengthCm, widthCm } = toCentimetres(geometry);
+  const { error } = await supabase
+    .from("beds")
+    .update({ geometry, length_cm: lengthCm, width_cm: widthCm })
+    .eq("id", bedId)
+    .eq("farm_id", farmId);
+  if (error) return { error: "Couldn't update that bed." };
+  revalidatePath(`/app/farms/${farmId}/beds`);
+  revalidatePath(`/app/farms/${farmId}/map`);
+  return { ok: true };
 }
 
 export async function deleteBed(farmId: string, bedId: string) {
   const { supabase } = await requireUser();
   await supabase.from("beds").delete().eq("id", bedId).eq("farm_id", farmId);
   revalidatePath(`/app/farms/${farmId}/beds`);
+  revalidatePath(`/app/farms/${farmId}/map`);
 }
 
 export async function assignFlower(farmId: string, bedId: string, slug: string) {
   const { supabase } = await requireUser();
   await supabase.from("bed_plants").upsert({ bed_id: bedId, flower_slug: slug }, { onConflict: "bed_id,flower_slug" });
   revalidatePath(`/app/farms/${farmId}/beds`);
+  revalidatePath(`/app/farms/${farmId}/map`);
 }
 
 export async function unassignFlower(farmId: string, bedId: string, slug: string) {
   const { supabase } = await requireUser();
   await supabase.from("bed_plants").delete().eq("bed_id", bedId).eq("flower_slug", slug);
   revalidatePath(`/app/farms/${farmId}/beds`);
+  revalidatePath(`/app/farms/${farmId}/map`);
 }
 
 export async function rebuildCalendar(farmId: string) {

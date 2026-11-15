@@ -14,7 +14,11 @@ export default async function BedsPage({ params }: { params: Promise<{ farmId: s
       <div>
         <h1 className="font-heading text-4xl">Beds</h1>
         <p className="mt-2 text-muted-foreground">
-          Tall plants on the {site?.hemisphere === "south" ? "south" : "north"} side. Perennials in a bed you won't dig up for a row of calendula.
+          Tall plants on the {site?.hemisphere === "south" ? "south" : "north"} side. Perennials in a bed you won't dig up for a row of calendula. Beds drawn on the{" "}
+          <Link href={`/app/farms/${farm.id}/map`} className="underline">
+            satellite map
+          </Link>{" "}
+          use the same plant counts.
         </p>
       </div>
       {planned.length === 0 ? (

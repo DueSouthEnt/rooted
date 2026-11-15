@@ -25,10 +25,14 @@ export default async function FarmOverview({ params }: { params: Promise<{ farmI
         Adjust place and frost dates
       </Link>
       <Disclaimer compact />
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Link href={`/app/farms/${farm.id}/flowers`} className="rounded-xl border border-border bg-card p-4">
           <p className="font-heading text-3xl">{crops.length}</p>
           <p className="text-sm">Flowers on the plan</p>
+        </Link>
+        <Link href={`/app/farms/${farm.id}/map`} className="rounded-xl border border-border bg-secondary/60 p-4">
+          <p className="font-heading text-3xl">Map</p>
+          <p className="text-sm">Outline the land and measure beds</p>
         </Link>
         <Link href={`/app/farms/${farm.id}/beds`} className="rounded-xl border border-border bg-card p-4">
           <p className="font-heading text-3xl">{beds.length}</p>

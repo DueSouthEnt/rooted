@@ -92,6 +92,24 @@ npx supabase db query --linked -f supabase/seed.sql
 
 5. Hosted projects often require email confirmation. Either configure SMTP, or turn off “Confirm email” while you are testing. If confirmation is on, sign-up will ask the person to check their inbox instead of logging them straight in.
 
+### Satellite map
+
+After this update, apply the new migration on the hosted project:
+
+```bash
+npx supabase db push --remote
+```
+
+That adds `farms.boundary` and `beds.geometry`. Existing row-level security on those tables already covers the new columns. No new secret is required.
+
+Satellite pictures come from Esri World Imagery, which does not need a key. Attribution is on the map. If you later want a different tile service, set an optional public variable and restart the app:
+
+```bash
+NEXT_PUBLIC_SATELLITE_TILE_URL=https://example.com/tiles/{z}/{y}/{x}
+```
+
+The `{z}`, `{y}` and `{x}` placeholders are required. Leave it unset to keep Esri.
+
 Deploy the Next.js app anywhere that runs Node (a small VPS, or a host that supports `next start`). Set the same two `NEXT_PUBLIC_SUPABASE_*` variables there. `npm run build` then `npm start` listens on port 43123.
 
 ## What the app does
