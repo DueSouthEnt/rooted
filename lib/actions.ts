@@ -5,8 +5,9 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import type { Flower } from "@/lib/flower";
 import { isRhsRating } from "@/lib/hardiness";
-import type { BedRectangle, FarmBoundary } from "@/lib/geo";
-import { isBedRectangle, isFarmBoundary, toCentimetres } from "@/lib/geo";
+import { packedSpanM, reflowBlock } from "@/lib/blocks";
+import type { BedRectangle, FarmBoundary, LngLat } from "@/lib/geo";
+import { destination, isBedRectangle, isFarmBoundary, toCentimetres } from "@/lib/geo";
 import { loadFarm, loadProfile, requireUser, type FarmRecord } from "@/lib/records";
 import { farmToSite } from "@/lib/records";
 import { createClient } from "@/lib/supabase/server";
@@ -370,6 +371,187 @@ export async function unassignFlower(farmId: string, bedId: string, slug: string
   await supabase.from("bed_plants").delete().eq("bed_id", bedId).eq("flower_slug", slug);
   revalidatePath(`/app/farms/${farmId}/beds`);
   revalidatePath(`/app/farms/${farmId}/map`);
+}
+
+export async function saveBedBlock(
+  farmId: string,
+  input: {
+    name: string;
+    areaName: string;
+    bedLengthM: number;
+    bedWidthCm: number;
+    pathWidthCm: number;
+    rotationDeg: number;
+    origin: LngLat;
+    alongSign: number;
+    acrossSign: number;
+    count: number;
+    seasonYear: number;
+  },
+) {
+  const { supabase } = await requireUser();
+  if (input.count < 1 || input.count > 400) return { error: "A block needs between 1 and 400 beds." };
+  const draft = reflowBlock({
+    origin: input.origin,
+    rotationDeg: input.rotationDeg,
+    bedLengthM: input.bedLengthM,
+    bedWidthM: input.bedWidthCm / 100,
+    pathWidthM: input.pathWidthCm / 100,
+    count: input.count,
+    alongSign: input.alongSign,
+    acrossSign: input.acrossSign,
+  });
+  const { data: block, error } = await supabase
+    .from("bed_blocks")
+    .insert({
+      farm_id: farmId,
+      area_name: input.areaName || "Farm area",
+      name: input.name,
+      bed_length_m: input.bedLengthM,
+      bed_width_cm: input.bedWidthCm,
+      path_width_cm: input.pathWidthCm,
+      bed_count: input.count,
+      rotation_deg: input.rotationDeg,
+      origin: input.origin,
+      along_sign: input.alongSign,
+      across_sign: input.acrossSign,
+      season_year: input.seasonYear,
+    })
+    .select("id")
+    .single();
+  if (error || !block) return { error: "Couldn't save that block." };
+  const rows = draft.beds.map((geometry, index) => {
+    const size = toCentimetres(geometry);
+    return {
+      farm_id: farmId,
+      block_id: block.id as string,
+      block_index: index + 1,
+      name: `${input.name} ${index + 1}`,
+      length_cm: size.lengthCm,
+      width_cm: size.widthCm,
+      bed_kind: "annual",
+      geometry,
+    };
+  });
+  const { error: bedError } = await supabase.from("beds").insert(rows);
+  if (bedError) return { error: "The block was saved, but the beds didn't land. Try it again." };
+  revalidatePath(`/app/farms/${farmId}/map`);
+  revalidatePath(`/app/farms/${farmId}/beds`);
+  return { id: block.id as string };
+}
+
+export async function updateBedBlock(
+  farmId: string,
+  blockId: string,
+  patch: {
+    name?: string;
+    bedLengthM?: number;
+    bedWidthCm?: number;
+    pathWidthCm?: number;
+    rotationDeg?: number;
+    count?: number;
+    seasonYear?: number | null;
+  },
+) {
+  const { supabase } = await requireUser();
+  const { data: existing, error } = await supabase.from("bed_blocks").select("*").eq("id", blockId).eq("farm_id", farmId).maybeSingle();
+  if (error || !existing) return { error: "That block has gone missing." };
+  const count = patch.count ?? existing.bed_count;
+  const bedWidthCm = patch.bedWidthCm ?? existing.bed_width_cm;
+  const pathWidthCm = patch.pathWidthCm ?? existing.path_width_cm;
+  const bedLengthM = patch.bedLengthM ?? existing.bed_length_m;
+  const rotationDeg = patch.rotationDeg ?? existing.rotation_deg;
+  if (count < 1 || count > 400 || bedWidthCm < 20 || pathWidthCm < 0 || bedLengthM < 0.4) {
+    return { error: "Those measurements won't make a bed. Width at least 20 cm, length at least 40 cm." };
+  }
+  const draft = reflowBlock({
+    origin: existing.origin as LngLat,
+    rotationDeg,
+    bedLengthM,
+    bedWidthM: bedWidthCm / 100,
+    pathWidthM: pathWidthCm / 100,
+    count,
+    alongSign: existing.along_sign,
+    acrossSign: existing.across_sign,
+  });
+  const { data: currentBeds } = await supabase
+    .from("beds")
+    .select("id, block_index")
+    .eq("block_id", blockId)
+    .order("block_index");
+  const ordered = currentBeds ?? [];
+  for (let index = 0; index < draft.beds.length; index += 1) {
+    const geometry = draft.beds[index];
+    const size = toCentimetres(geometry);
+    const name = `${patch.name ?? existing.name} ${index + 1}`;
+    const row = ordered[index];
+    if (row) {
+      await supabase
+        .from("beds")
+        .update({ geometry, length_cm: size.lengthCm, width_cm: size.widthCm, name, block_index: index + 1 })
+        .eq("id", row.id);
+    } else {
+      await supabase.from("beds").insert({
+        farm_id: farmId,
+        block_id: blockId,
+        block_index: index + 1,
+        name,
+        length_cm: size.lengthCm,
+        width_cm: size.widthCm,
+        bed_kind: "annual",
+        geometry,
+      });
+    }
+  }
+  for (const extra of ordered.slice(draft.beds.length)) {
+    await supabase.from("beds").delete().eq("id", extra.id);
+  }
+  await supabase
+    .from("bed_blocks")
+    .update({
+      name: patch.name ?? existing.name,
+      bed_length_m: bedLengthM,
+      bed_width_cm: bedWidthCm,
+      path_width_cm: pathWidthCm,
+      bed_count: count,
+      rotation_deg: rotationDeg,
+      season_year: patch.seasonYear === undefined ? existing.season_year : patch.seasonYear,
+    })
+    .eq("id", blockId);
+  revalidatePath(`/app/farms/${farmId}/map`);
+  revalidatePath(`/app/farms/${farmId}/beds`);
+  return { ok: true };
+}
+
+export async function deleteBedBlock(farmId: string, blockId: string) {
+  const { supabase } = await requireUser();
+  await supabase.from("bed_blocks").delete().eq("id", blockId).eq("farm_id", farmId);
+  revalidatePath(`/app/farms/${farmId}/map`);
+  revalidatePath(`/app/farms/${farmId}/beds`);
+}
+
+export async function duplicateBedBlock(farmId: string, blockId: string) {
+  const { supabase } = await requireUser();
+  const { data: block } = await supabase.from("bed_blocks").select("*").eq("id", blockId).eq("farm_id", farmId).maybeSingle();
+  if (!block) return { error: "Nothing to copy." };
+  const span = packedSpanM(block.bed_count, block.bed_width_cm / 100, block.path_width_cm / 100);
+  const gap = span + block.path_width_cm / 100;
+  const origin = block.origin as LngLat;
+  const shifted = destination(origin[1], origin[0], block.rotation_deg + 90, block.across_sign * gap);
+  const copy = await saveBedBlock(farmId, {
+    name: `${block.name} copy`,
+    areaName: block.area_name,
+    bedLengthM: block.bed_length_m,
+    bedWidthCm: block.bed_width_cm,
+    pathWidthCm: block.path_width_cm,
+    rotationDeg: block.rotation_deg,
+    origin: shifted,
+    alongSign: block.along_sign,
+    acrossSign: block.across_sign,
+    count: block.bed_count,
+    seasonYear: block.season_year ?? new Date().getFullYear(),
+  });
+  return copy;
 }
 
 export async function rebuildCalendar(farmId: string) {

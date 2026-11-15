@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Disclaimer } from "@/components/disclaimer";
+import { EmptyFlourish, PageHeader } from "@/components/floral";
 import { FlowerBoard } from "@/components/flower-board";
 import { loadProfile, loadFarm } from "@/lib/records";
 import { recommend } from "@/lib/recommend";
@@ -14,8 +15,8 @@ export default async function FlowersPage({ params }: { params: Promise<{ farmId
   if (!site) {
     return (
       <div className="space-y-3">
-        <h1 className="font-heading text-4xl">Flowers</h1>
-        <p>Set a place first. Recommendations without a frost date are just a wishlist.</p>
+        <PageHeader bloom="poppy" kicker="Growing" title="Crop library" lede="Set a place first. Recommendations without a frost date are just a wishlist." />
+        <EmptyFlourish title="No place on this farm" text="A postcode is enough to rank what is worth sowing." />
         <Link href={`/app/farms/${farm.id}/place`} className="underline">
           Add the place
         </Link>
@@ -26,12 +27,12 @@ export default async function FlowersPage({ params }: { params: Promise<{ farmId
   const recommendations = recommend(flowers, site);
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="font-heading text-4xl">What will grow</h1>
-        <p className="mt-2 text-muted-foreground">
-          Ranked for {farm.place_name || "this garden"}. Safe bets first. Gambles are still listed, in case you enjoy those.
-        </p>
-      </div>
+      <PageHeader
+        bloom="poppy"
+        kicker="Growing"
+        title="What will grow"
+        lede={`Ranked for ${farm.place_name || "this garden"}. Safe bets first. Gambles are still listed, in case you enjoy those.`}
+      />
       {catalogueSource === "bundled" ? (
         <p className="rounded-xl border border-border bg-card p-3 text-sm">
           Showing the built-in catalogue. Seed the database with <code>npx supabase db reset</code> if you want it in Postgres too.

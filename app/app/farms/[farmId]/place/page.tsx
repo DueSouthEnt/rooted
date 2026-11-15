@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/floral";
 import { PlaceForm } from "@/components/place-form";
 import { updateFarmClimate } from "@/lib/actions";
 import { monthDayToIso } from "@/lib/dates";
@@ -18,8 +19,12 @@ export default async function PlacePage({ params }: { params: Promise<{ farmId: 
 
   return (
     <div className="space-y-4">
-      <h1 className="font-heading text-4xl">Place and frost</h1>
-      <p className="text-muted-foreground">Change the pin, or override the dates if you know this garden better than the average.</p>
+      <PageHeader
+        bloom="leaf"
+        kicker="Your farm"
+        title="Place and frost"
+        lede="Change the pin, or override the dates if you know this garden better than the average."
+      />
       <PlaceForm
         action={updateFarmClimate.bind(null, farm.id)}
         submitLabel="Update frost dates"

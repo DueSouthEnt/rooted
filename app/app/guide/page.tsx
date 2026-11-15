@@ -1,3 +1,5 @@
+import { PageHeader } from "@/components/floral";
+
 const terms = [
   ["Frost date", "The average day a 0°C night arrives or leaves. Not a forecast, and not the same in a hollow as it is against a warm wall."],
   ["RHS hardiness", "A British rating, H1a to H7. Higher numbers survive colder winters. H5 copes with an average UK winter. H3 wants shelter or a lift in autumn."],
@@ -17,7 +19,7 @@ const terms = [
 export default function GuidePage() {
   return (
     <div className="space-y-4">
-      <h1 className="font-heading text-4xl">What the words mean</h1>
+      <PageHeader bloom="cosmos" kicker="Operations" title="What the words mean" lede="Short versions of the words the rest of the app uses without apology." />
       <p className="text-muted-foreground">Short versions. The beds will teach you the long ones.</p>
       <dl className="space-y-4">
         {terms.map(([term, copy]) => (

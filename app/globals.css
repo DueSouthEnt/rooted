@@ -143,3 +143,21 @@
 .leaflet-tooltip.bed-label::before {
   display: none;
 }
+
+.leaflet-div-icon.bed-index {
+  background: transparent;
+  border: 0;
+}
+
+.leaflet-div-icon.bed-index span {
+  display: inline-flex;
+  min-width: 1.4rem;
+  justify-content: center;
+  border-radius: 999px;
+  background: #fffaf4;
+  color: #3f5c49;
+  font-size: 11px;
+  font-weight: 650;
+  padding: 1px 4px;
+  border: 1px solid #6d8a74;
+}

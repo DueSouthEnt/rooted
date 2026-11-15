@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Disclaimer } from "@/components/disclaimer";
+import { PageHeader } from "@/components/floral";
 import { FrostStamp } from "@/components/frost-stamp";
 import { Button } from "@/components/ui/button";
 import { deleteFarm } from "@/lib/actions";
@@ -16,10 +17,12 @@ export default async function FarmOverview({ params }: { params: Promise<{ farmI
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="font-heading text-4xl">{farm.name}</h1>
-        <p className="mt-1 text-muted-foreground">The {farm.season_year} season. Autumn jobs from the year before are already on the list.</p>
-      </div>
+      <PageHeader
+        bloom="sweetpea"
+        kicker="Your farm"
+        title={farm.name}
+        lede={`The ${farm.season_year} season. Autumn jobs from the year before are already on the list.`}
+      />
       <FrostStamp farm={farm} site={site} />
       <Link href={`/app/farms/${farm.id}/place`} className="inline-block text-sm underline">
         Adjust place and frost dates

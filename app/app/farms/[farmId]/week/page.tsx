@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Disclaimer } from "@/components/disclaimer";
+import { EmptyFlourish, PageHeader } from "@/components/floral";
 import { TaskList } from "@/components/task-list";
 import { rebuildCalendar, updateSeasonYear } from "@/lib/actions";
 import { loadFarm, loadTasks } from "@/lib/records";
@@ -15,25 +16,25 @@ export default async function WeekPage({ params }: { params: Promise<{ farmId: s
 
   if (!loaded.site) {
     return (
-      <p>
-        The calendar needs frost dates.{" "}
+      <div className="space-y-4">
+        <PageHeader bloom="dahlia" kicker="Overview" title="This week" lede="The calendar needs frost dates before it will date a single job." />
+        <EmptyFlourish title="No frost dates yet" text="Set the place, then the Monday list can start." />
         <Link href={`/app/farms/${farmId}/place`} className="underline">
           Set the place
         </Link>
-        .
-      </p>
+      </div>
     );
   }
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="font-heading text-4xl">The {loaded.farm.season_year} season</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Jobs are dated from your frost dates. Ticks stay put if the same job comes back.
-          </p>
-        </div>
+        <PageHeader
+          bloom="dahlia"
+          kicker="Overview"
+          title={`The ${loaded.farm.season_year} season`}
+          lede="Jobs are dated from your frost dates. Ticks stay put if the same job comes back."
+        />
         <form action={updateSeasonYear.bind(null, farmId)} className="flex items-end gap-2">
           <label className="text-sm">
             Season

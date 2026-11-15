@@ -4,7 +4,7 @@ import type { Flower } from "@/lib/flower";
 import { planningWindow, type Hemisphere, type Summer } from "@/lib/climate";
 import type { RhsRating } from "@/lib/hardiness";
 import { isRhsRating } from "@/lib/hardiness";
-import type { BedRectangle, FarmBoundary } from "@/lib/geo";
+import type { BedRectangle, FarmBoundary, LngLat } from "@/lib/geo";
 import type { SitePlan } from "@/lib/tasks";
 import { createClient } from "@/lib/supabase/server";
 
@@ -53,6 +53,24 @@ export interface BedRecord {
   position_x: number;
   position_y: number;
   geometry: BedRectangle | null;
+  block_id: string | null;
+  block_index: number | null;
+}
+
+export interface BlockRecord {
+  id: string;
+  farm_id: string;
+  area_name: string;
+  name: string;
+  bed_length_m: number;
+  bed_width_cm: number;
+  path_width_cm: number;
+  bed_count: number;
+  rotation_deg: number;
+  origin: LngLat;
+  along_sign: number;
+  across_sign: number;
+  season_year: number | null;
 }
 
 export interface BedPlantRecord {
@@ -144,10 +162,11 @@ export async function loadFarm(farmId: string) {
   if (error) throw new Error(error.message);
   if (!data) notFound();
   const farm = data as FarmRecord;
-  const [{ data: crops }, { data: beds }, { data: plants }, catalogue] = await Promise.all([
+  const [{ data: crops }, { data: beds }, { data: plants }, { data: blocks }, catalogue] = await Promise.all([
     supabase.from("farm_crops").select("*").eq("farm_id", farmId),
-    supabase.from("beds").select("*").eq("farm_id", farmId).order("name"),
+    supabase.from("beds").select("*").eq("farm_id", farmId).order("block_index"),
     supabase.from("bed_plants").select("id, bed_id, flower_slug"),
+    supabase.from("bed_blocks").select("*").eq("farm_id", farmId).order("name"),
     loadFlowers(supabase),
   ]);
   return {
@@ -156,6 +175,7 @@ export async function loadFarm(farmId: string) {
     farm,
     crops: (crops ?? []) as CropRecord[],
     beds: (beds ?? []) as BedRecord[],
+    blocks: (blocks ?? []) as BlockRecord[],
     plants: (plants ?? []) as BedPlantRecord[],
     flowers: catalogue.flowers,
     catalogueSource: catalogue.source,

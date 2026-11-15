@@ -62,7 +62,7 @@ Open [http://127.0.0.1:43123](http://127.0.0.1:43123). Create an account. Local 
 npm test
 ```
 
-That runs the frost-date, hardiness, place-lookup, recommendation, and task-scheduling tests. They do not need Docker.
+That runs the frost-date, hardiness, place-lookup, recommendation, bed-block layout, and task-scheduling tests. They do not need Docker.
 
 ## Use a hosted Supabase project
 
@@ -102,6 +102,18 @@ npx supabase db push --remote
 
 That adds `farms.boundary` and `beds.geometry`. Existing row-level security on those tables already covers the new columns. No new secret is required.
 
+### Bed blocks and the home forecast
+
+If you already applied the map migration, run the same command again:
+
+```bash
+npx supabase db push --remote
+```
+
+The new file is `supabase/migrations/20261115220000_bed_blocks.sql`. It adds a `bed_blocks` table and `beds.block_id` / `beds.block_index`. A block is a set of ordinary beds, so plantings and plant counts stay on each bed. Existing single beds are untouched. No new environment variable.
+
+The signed-in home page reads the Open-Meteo forecast for the farm’s latitude and longitude (free, no key). If the farm has no pin, the weather card asks you to set a place instead of inventing a temperature.
+
 Satellite pictures come from Esri World Imagery, which does not need a key. Attribution is on the map. If you later want a different tile service, set an optional public variable and restart the app:
 
 ```bash
@@ -119,6 +131,8 @@ Deploy the Next.js app anywhere that runs Node (a small VPS, or a host that supp
 - **Flowers.** More than 70 cut-flower crops: annuals, biennials, perennials, bulbs, tubers, corms, and a few shrubs. Each record has hardiness, sowing method, weeks relative to frost, germination, days to flower, spacing, pinch and support, harvest stage, vase life, pests, and what to do with tender plants in winter.
 - **Recommendations.** Crops are scored against season length, summer heat, and hardiness. A starter mix prefers easy plants and, in a mild climate, an autumn-sown hardy annual plus a filler.
 - **Beds.** You set the size in metres (or feet, if you switch units). The app counts plants from in-row and between-row spacing, suggests tall plants on the north side (south side in the southern hemisphere), and keeps perennials out of beds you plan to clear.
+- **Farm map.** Outline the land on satellite pictures, draw one bed, or drag a bed block: parallel beds with a path between them, numbered along the edge. Each stripe is a real bed, so a planting still belongs to one of them.
+- **Home.** The signed-in page leads with today’s weather from the Open-Meteo forecast (temperature, conditions, high and low, rain, wind, the next seven days, and a frost badge if any night is at or below 0°C), then the jobs and the season.
 - **Calendar.** Indoor sowings, hardening off, planting out, autumn sowings of hardy annuals, successions, pinching, support, feeding, cutting, deadheading, lifting dahlias, and dividing perennials. Tick jobs off. “This week” starts on Monday.
 
 Units default to metric. The header switches to inches and Fahrenheit; the choice is stored on your profile.

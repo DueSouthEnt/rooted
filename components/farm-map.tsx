@@ -3,8 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
 import { useRouter } from "next/navigation";
-import { assignFlower, saveFarmBoundary, saveMappedBed, unassignFlower, updateMappedBed } from "@/lib/actions";
+import { assignFlower, saveBedBlock, saveFarmBoundary, saveMappedBed, unassignFlower, updateMappedBed } from "@/lib/actions";
 import { plantCount } from "@/lib/beds";
+import { bedIndexLabels, previewBlock, type BlockDraft } from "@/lib/blocks";
+import { BloomMark } from "@/components/floral";
+import { BlockPanel } from "@/components/block-panel";
 import type { Flower } from "@/lib/flower";
 import {
   closeRing,
@@ -22,14 +25,15 @@ import {
   type FarmBoundary,
   type LngLat,
 } from "@/lib/geo";
-import type { BedPlantRecord, BedRecord, CropRecord, FarmRecord } from "@/lib/records";
+import type { BedPlantRecord, BedRecord, BlockRecord, CropRecord, FarmRecord } from "@/lib/records";
 import { formatLength, type Units } from "@/lib/units";
 
-type Mode = "move" | "outline" | "bed";
+type Mode = "move" | "outline" | "bed" | "block";
 
 export function FarmMap({
   farm,
   beds,
+  blocks,
   plants,
   crops,
   flowers,
@@ -37,6 +41,7 @@ export function FarmMap({
 }: {
   farm: FarmRecord;
   beds: BedRecord[];
+  blocks: BlockRecord[];
   plants: BedPlantRecord[];
   crops: CropRecord[];
   flowers: Flower[];
@@ -49,6 +54,13 @@ export function FarmMap({
   const [mode, setMode] = useState<Mode>("move");
   const [outline, setOutline] = useState<LngLat[]>([]);
   const [draft, setDraft] = useState<BedRectangle | null>(null);
+  const [blockOpen, setBlockOpen] = useState(false);
+  const [blockLength, setBlockLength] = useState(10);
+  const [blockWidth, setBlockWidth] = useState(75);
+  const [blockPath, setBlockPath] = useState(40);
+  const [blockRotation, setBlockRotation] = useState(0);
+  const [blockDraft, setBlockDraft] = useState<BlockDraft | null>(null);
+  const [selectedBlock, setSelectedBlock] = useState<string | null>(null);
   const [bedName, setBedName] = useState("");
   const [bedKind, setBedKind] = useState<"annual" | "perennial" | "bulb">("annual");
   const [selected, setSelected] = useState<string | null>(null);
@@ -59,8 +71,12 @@ export function FarmMap({
   const [mapReady, setMapReady] = useState(false);
   const modeRef = useRef(mode);
   const selectedRef = useRef(selected);
+  const blockSpecRef = useRef({ length: blockLength, width: blockWidth, path: blockPath, rotation: blockRotation });
+  const blocksRef = useRef(blocks);
   modeRef.current = mode;
   selectedRef.current = selected;
+  blockSpecRef.current = { length: blockLength, width: blockWidth, path: blockPath, rotation: blockRotation };
+  blocksRef.current = blocks;
 
   const bySlug = useMemo(() => new Map(flowers.map((flower) => [flower.slug, flower])), [flowers]);
   const planned = crops
@@ -146,29 +162,63 @@ export function FarmMap({
           );
         }
       }
+      const labelled = new Map<string, Set<number>>();
+      for (const block of blocks) labelled.set(block.id, new Set(bedIndexLabels(block.bed_count)));
       for (const bed of beds) {
         if (!isBedRectangle(bed.geometry)) continue;
         const ring = rectangleRing(bed.geometry).map(([lng, lat]) => [lat, lng] as [number, number]);
         const planted = plants.filter((plant) => plant.bed_id === bed.id);
         const colour = planted.length ? bySlug.get(planted[0].flower_slug)?.colour ?? "#f7d5dc" : "#fffaf4";
         const polygon = L.polygon(ring, {
-          color: "#3f5c49",
-          weight: 2,
+          color: bed.block_id && bed.block_id === selectedBlock ? "#c45b86" : "#3f5c49",
+          weight: bed.block_id && bed.block_id === selectedBlock ? 3 : 2,
           fillColor: colour,
           fillOpacity: planted.length ? 0.78 : 0.35,
         }).addTo(group);
-        polygon.bindTooltip(bedLabel(bed, planted, bySlug, units), {
-          permanent: true,
-          direction: "center",
-          className: "bed-label",
-        });
+        const inBlock = bed.block_id != null;
+        const showIndex = inBlock && labelled.get(bed.block_id!)?.has(bed.block_index ?? 0);
+        if (!inBlock) {
+          polygon.bindTooltip(bedLabel(bed, planted, bySlug, units), {
+            permanent: true,
+            direction: "center",
+            className: "bed-label",
+          });
+        } else if (showIndex && bed.geometry) {
+          L.marker([bed.geometry.center[1], bed.geometry.center[0]], {
+            interactive: false,
+            icon: L.divIcon({
+              className: "bed-index",
+              html: `<span>${bed.block_index}</span>`,
+              iconSize: [28, 18],
+              iconAnchor: [14, 9],
+            }),
+          }).addTo(group);
+        }
         polygon.on("click", () => {
+          if (bed.block_id) setSelectedBlock(bed.block_id);
           const slug = selectedRef.current;
           if (!slug) return;
           const already = plants.some((plant) => plant.bed_id === bed.id && plant.flower_slug === slug);
           void (already ? unassignFlower(farm.id, bed.id, slug) : assignFlower(farm.id, bed.id, slug)).then(() =>
             router.refresh(),
           );
+        });
+      }
+      if (blockDraft) {
+        const marks = new Set(bedIndexLabels(blockDraft.count));
+        blockDraft.beds.forEach((rectangle, index) => {
+          const ring = rectangleRing(rectangle).map(([lng, lat]) => [lat, lng] as [number, number]);
+          L.polygon(ring, { color: "#3f5c49", weight: 1.5, fillColor: "#e7f0e4", fillOpacity: 0.72 }).addTo(group);
+          if (!marks.has(index + 1)) return;
+          L.marker([rectangle.center[1], rectangle.center[0]], {
+            interactive: false,
+            icon: L.divIcon({
+              className: "bed-index",
+              html: `<span>${index + 1}</span>`,
+              iconSize: [28, 18],
+              iconAnchor: [14, 9],
+            }),
+          }).addTo(group);
         });
       }
       if (draft) {
@@ -181,34 +231,77 @@ export function FarmMap({
     return () => {
       cancelled = true;
     };
-  }, [beds, plants, boundary, outline, draft, bySlug, farm.id, router, units, mapReady]);
+  }, [beds, plants, blocks, boundary, outline, draft, blockDraft, selectedBlock, bySlug, farm.id, router, units, mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    if (mode === "bed") map.dragging.disable();
+    if (mode === "bed" || mode === "block") map.dragging.disable();
     else map.dragging.enable();
     const container = map.getContainer();
     let start: LngLat | null = null;
+    let pending: BlockDraft | null = null;
+    let saved = false;
     const toLngLat = (event: MouseEvent): LngLat => {
       const rect = container.getBoundingClientRect();
       const latlng = map.containerPointToLatLng([event.clientX - rect.left, event.clientY - rect.top]);
       return [latlng.lng, latlng.lat];
     };
     const down = (event: MouseEvent) => {
-      if (modeRef.current !== "bed") return;
+      const current = modeRef.current;
+      if (current !== "bed" && current !== "block") return;
       if (event.button !== 0) return;
       start = toLngLat(event);
+      pending = null;
       map.dragging.disable();
       event.preventDefault();
     };
     const move = (event: MouseEvent) => {
-      if (!start || modeRef.current !== "bed") return;
-      const next = rectangleFromCorners(start, toLngLat(event));
-      if (next) setDraft(next);
+      if (!start) return;
+      const current = toLngLat(event);
+      if (modeRef.current === "bed") {
+        const next = rectangleFromCorners(start, current);
+        if (next) setDraft(next);
+        return;
+      }
+      if (modeRef.current !== "block") return;
+      const spec = blockSpecRef.current;
+      pending = previewBlock(start, current, {
+        rotationDeg: spec.rotation,
+        bedLengthM: spec.length,
+        bedWidthM: spec.width / 100,
+        pathWidthM: spec.path / 100,
+      });
+      setBlockDraft(pending);
     };
     const up = () => {
+      const drawn = pending;
+      const origin = start;
       start = null;
+      pending = null;
+      if (saved || modeRef.current !== "block" || !drawn || !origin) return;
+      saved = true;
+      const name = `Block ${blocksRef.current.length + 1}`;
+      void saveBedBlock(farm.id, {
+        name,
+        areaName: "Farm area",
+        bedLengthM: drawn.bedLengthM,
+        bedWidthCm: Math.round(drawn.bedWidthM * 100),
+        pathWidthCm: Math.round(drawn.pathWidthM * 100),
+        rotationDeg: drawn.rotationDeg,
+        origin: drawn.origin,
+        alongSign: drawn.alongSign,
+        acrossSign: drawn.acrossSign,
+        count: drawn.count,
+        seasonYear: farm.season_year,
+      }).then((result) => {
+        setBlockDraft(null);
+        setMode("move");
+        if (result && "id" in result && result.id) setSelectedBlock(result.id);
+        if (result && "error" in result && result.error) setMessage(result.error);
+        else setMessage(`${name} saved as ${drawn.count} beds.`);
+        router.refresh();
+      });
     };
     container.addEventListener("pointerdown", down, true);
     container.addEventListener("mousedown", down, true);
@@ -224,7 +317,7 @@ export function FarmMap({
       window.removeEventListener("pointerup", up);
       window.removeEventListener("mouseup", up);
     };
-  }, [mode, mapReady]);
+  }, [mode, mapReady, farm.id, farm.season_year, router]);
 
   async function searchPlace(event: React.FormEvent) {
     event.preventDefault();
@@ -313,15 +406,27 @@ export function FarmMap({
 
   const draftArea = draft ? rectangleAreaM2(draft) : 0;
   const boundaryArea = boundary ? ringAreaM2(boundary.coordinates[0]) : outline.length >= 3 ? ringAreaM2(outline) : 0;
+  const activeBlock = blocks.find((block) => block.id === selectedBlock) ?? null;
+  const areas = new Map<string, BlockRecord[]>();
+  for (const block of blocks) {
+    const list = areas.get(block.area_name) ?? [];
+    list.push(block);
+    areas.set(block.area_name, list);
+  }
+  if (areas.size === 0) areas.set("Farm area", []);
+  const looseBeds = beds.filter((bed) => !bed.block_id && isBedRectangle(bed.geometry));
 
   return (
     <div className="space-y-3" onPointerUp={onPointerUp}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="font-heading text-4xl">Farm map</h1>
-          <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-            Satellite pictures, then your outline, then the beds. Sizes are measured on the ground, and the plant counts use those metres.
-          </p>
+        <div className="flex items-start gap-2">
+          <BloomMark bloom="cosmos" className="h-12 w-16 shrink-0" />
+          <div>
+            <h1 className="font-heading text-4xl">Farm map</h1>
+            <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+              Satellite pictures, then your outline, then a single bed or a whole block of them. Sizes are measured on the ground.
+            </p>
+          </div>
         </div>
         <form onSubmit={searchPlace} className="flex gap-2">
           <input
@@ -342,12 +447,16 @@ export function FarmMap({
             ["move", "Move"],
             ["outline", "Draw outline"],
             ["bed", "Draw a bed"],
+            ["block", "Bed block"],
           ] as const
         ).map(([value, label]) => (
           <button
             key={value}
             type="button"
-            onClick={() => setMode(value)}
+            onClick={() => {
+              if (value === "block") setBlockOpen(true);
+              else setMode(value);
+            }}
             className={
               mode === value
                 ? "h-11 rounded-full bg-primary px-4 text-sm text-primary-foreground"
@@ -374,17 +483,133 @@ export function FarmMap({
         ) : null}
       </div>
 
+      {blockOpen ? (
+        <form
+          className="grid gap-3 rounded-2xl border border-border bg-card p-4 sm:grid-cols-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setBlockOpen(false);
+            setMode("block");
+            setMessage("Drag across the ground. Sideways sets how many beds; along the rows sets their length.");
+          }}
+        >
+          <p className="font-heading text-2xl sm:col-span-2">Bed block</p>
+          <p className="text-sm text-muted-foreground sm:col-span-2">
+            A run of parallel beds with a path between each. The drag fills the rectangle. You can change the widths afterwards.
+          </p>
+          <label className="text-sm">
+            Bed length (m)
+            <input
+              type="number"
+              min={1}
+              step={0.5}
+              value={blockLength}
+              onChange={(event) => setBlockLength(Number(event.target.value))}
+              className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-3"
+            />
+          </label>
+          <label className="text-sm">
+            Bed width (cm)
+            <input
+              type="number"
+              min={20}
+              step={1}
+              value={blockWidth}
+              onChange={(event) => setBlockWidth(Number(event.target.value))}
+              className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-3"
+            />
+          </label>
+          <label className="text-sm">
+            Path width (cm)
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={blockPath}
+              onChange={(event) => setBlockPath(Number(event.target.value))}
+              className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-3"
+            />
+          </label>
+          <label className="text-sm">
+            Orientation, clockwise from north: {blockRotation}°
+            <input
+              type="range"
+              min={0}
+              max={180}
+              value={blockRotation}
+              onChange={(event) => setBlockRotation(Number(event.target.value))}
+              className="mt-3 w-full accent-[var(--primary)]"
+            />
+          </label>
+          <div className="flex gap-2 sm:col-span-2">
+            <button type="submit" className="h-11 rounded-full bg-primary px-4 text-sm text-primary-foreground">
+              Draw the block
+            </button>
+            <button type="button" className="h-11 rounded-full border border-border px-4 text-sm" onClick={() => setBlockOpen(false)}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : null}
+
       <p className="text-sm text-muted-foreground">
         {mode === "outline"
           ? "Tap each corner of the land. Then close the outline."
           : mode === "bed"
-            ? "Drag across the ground for a bed. Then set the angle and keep it."
-            : "Drag the map. Tap a flower, then a bed — or drag the flower onto it."}
+            ? "Drag across the ground for one bed. Then set the angle and keep it."
+            : mode === "block"
+              ? blockDraft
+                ? `${blockDraft.count} beds, ${blockDraft.bedLengthM.toFixed(1)} m long, about ${formatSquareMetres(blockDraft.areaM2)}. Release to keep them.`
+                : "Drag a rectangle. Beds pack across the short way, paths between them, numbered along the edge."
+              : "Drag the map. Tap a flower, then a bed — or drag the flower onto it."}
         {boundaryArea > 0 ? ` Outline about ${formatSquareMetres(boundaryArea)}.` : ""}
       </p>
 
-      <div className="overflow-hidden rounded-2xl border border-border shadow-sm">
-        <div ref={node} className="z-0 h-[68dvh] min-h-80 w-full touch-none" />
+      <div className="grid items-start gap-3 xl:grid-cols-[200px_1fr_260px]">
+        <aside className="rounded-2xl border border-border bg-card p-3 text-sm">
+          <p className="text-xs tracking-[0.14em] text-muted-foreground uppercase">Areas</p>
+          {[...areas.entries()].map(([area, list]) => (
+            <div key={area} className="mt-2">
+              <p className="font-medium">{area}</p>
+              {list.length === 0 ? <p className="text-muted-foreground">No blocks yet.</p> : null}
+              <ul className="mt-1 space-y-1">
+                {list.map((block) => (
+                  <li key={block.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedBlock(block.id);
+                        const map = mapRef.current;
+                        if (!map) return;
+                        const members = beds.filter((bed) => bed.block_id === block.id && isBedRectangle(bed.geometry));
+                        const points = members.flatMap((bed) =>
+                          rectangleRing(bed.geometry as BedRectangle).map(([lng, lat]) => [lat, lng] as [number, number]),
+                        );
+                        if (points.length > 0) map.fitBounds(points, { padding: [28, 28], maxZoom: 19 });
+                        else map.panTo([block.origin[1], block.origin[0]]);
+                      }}
+                      className={
+                        selectedBlock === block.id ? "w-full rounded-lg bg-secondary px-2 py-1 text-left" : "w-full rounded-lg px-2 py-1 text-left hover:bg-secondary"
+                      }
+                    >
+                      {block.name}
+                      <span className="block text-xs text-muted-foreground">
+                        {block.bed_count} beds · {formatSquareMetres(block.bed_length_m * (block.bed_count * (block.bed_width_cm / 100) + Math.max(0, block.bed_count - 1) * (block.path_width_cm / 100)))}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+          {looseBeds.length > 0 ? (
+            <p className="mt-3 text-xs text-muted-foreground">{looseBeds.length} single bed{looseBeds.length === 1 ? "" : "s"} outside a block.</p>
+          ) : null}
+        </aside>
+        <div className="overflow-hidden rounded-2xl border border-border shadow-sm">
+          <div ref={node} className="z-0 h-[68dvh] min-h-80 w-full touch-none" />
+        </div>
+        {activeBlock ? <BlockPanel farmId={farm.id} block={activeBlock} /> : <div className="hidden xl:block" />}
       </div>
 
       {draft ? (
@@ -461,10 +686,16 @@ export function FarmMap({
         )}
       </div>
 
-      {beds.some((bed) => isBedRectangle(bed.geometry)) ? (
+      {blocks.length > 0 || looseBeds.length > 0 ? (
         <ul className="space-y-2 text-sm">
-          {beds.filter((bed) => isBedRectangle(bed.geometry)).map((bed) => {
-            const geometry = bed.geometry as BedRectangle;
+          {blocks.map((block) => (
+            <li key={block.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2">
+              <button type="button" className="text-left" onClick={() => setSelectedBlock(block.id)}>
+                <strong>{block.name}</strong> · {block.bed_count} beds · {block.bed_length_m.toFixed(1)} m by {block.bed_width_cm} cm
+              </button>
+            </li>
+          ))}
+          {looseBeds.map((bed) => {
             const planted = plants.filter((plant) => plant.bed_id === bed.id);
             return (
               <li key={bed.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2">

@@ -1,38 +1,82 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { APP_NAME } from "@/lib/brand";
 import { signOut, updateUnits } from "@/lib/actions";
 import type { Units } from "@/lib/units";
 
-const links = [
-  { href: "", label: "Farm" },
-  { href: "/flowers", label: "Flowers" },
-  { href: "/map", label: "Map" },
-  { href: "/beds", label: "Beds" },
-  { href: "/week", label: "Week" },
-];
-
 export function Shell({
   displayName,
   units,
+  farms,
   children,
 }: {
   displayName: string;
   units: Units;
+  farms: { id: string; name: string }[];
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const search = useSearchParams();
   const match = pathname.match(/^\/app\/farms\/([0-9a-f-]{36})/);
-  const farmId = match?.[1];
+  const queried = search.get("farm");
+  const farmId = match?.[1] ?? (queried && farms.some((farm) => farm.id === queried) ? queried : farms[0]?.id);
+  const farm = farms.find((item) => item.id === farmId);
   const base = farmId ? `/app/farms/${farmId}` : null;
   const wide = pathname.includes("/map");
+
+  const groups = [
+    {
+      title: "Your farm",
+      links: base
+        ? [{ href: base, label: farm?.name ?? "Farm" }]
+        : [{ href: "/app/farms/new", label: "Add a farm" }],
+    },
+    {
+      title: "Overview",
+      links: [
+        { href: farmId ? `/app?farm=${farmId}` : "/app", label: "Dashboard" },
+        ...(base
+          ? [
+              { href: `${base}/map`, label: "Farm map" },
+              { href: `${base}/week`, label: "This week" },
+            ]
+          : []),
+      ],
+    },
+    {
+      title: "Growing",
+      links: base
+        ? [
+            { href: `${base}/flowers`, label: "Crop library" },
+            { href: `${base}/beds`, label: "Beds" },
+          ]
+        : [],
+    },
+    {
+      title: "Operations",
+      links: [
+        { href: "/app/guide", label: "What the words mean" },
+        { href: "/app/settings", label: "Settings" },
+      ],
+    },
+  ];
+
+  const mobile = base
+    ? [
+        { href: `/app?farm=${farmId}`, label: "Home" },
+        { href: `${base}/map`, label: "Map" },
+        { href: `${base}/beds`, label: "Beds" },
+        { href: `${base}/week`, label: "Week" },
+        { href: `${base}/flowers`, label: "Flowers" },
+      ]
+    : [];
 
   return (
     <div className="min-h-full">
       <header className="border-b border-border bg-card/90 backdrop-blur-sm">
-        <div className={`mx-auto flex items-center justify-between gap-3 px-4 py-3 ${wide ? "max-w-[1400px]" : "max-w-5xl"}`}>
+        <div className={`mx-auto flex items-center justify-between gap-3 px-4 py-3 ${wide ? "max-w-[1500px]" : "max-w-6xl"}`}>
           <Link href="/app" className="font-heading flex items-center gap-2 text-2xl tracking-tight">
             <FlowerMark />
             {APP_NAME}
@@ -53,41 +97,42 @@ export function Shell({
           </div>
         </div>
       </header>
-      <div className={`mx-auto grid gap-6 px-4 py-6 md:grid-cols-[180px_1fr] ${wide ? "max-w-[1400px]" : "max-w-5xl"}`}>
-        <nav className="hidden flex-col gap-1 md:flex">
-          <Link href="/app" className="rounded-lg px-3 py-2 hover:bg-secondary">
-            Your farms
-          </Link>
-          <Link href="/app/guide" className="rounded-lg px-3 py-2 hover:bg-secondary">
-            What the words mean
-          </Link>
-          {base
-            ? links.map((link) => {
-                const href = `${base}${link.href}`;
-                const active = link.href === "" ? pathname === base : pathname.startsWith(href);
-                return (
-                  <Link
-                    key={link.label}
-                    href={href}
-                    className={active ? "rounded-lg bg-primary px-3 py-2 text-primary-foreground" : "rounded-lg px-3 py-2 hover:bg-secondary"}
-                  >
-                    {link.label}
-                  </Link>
-                );
-              })
-            : null}
+      <div className={`mx-auto grid gap-6 px-4 py-6 md:grid-cols-[200px_1fr] ${wide ? "max-w-[1500px]" : "max-w-6xl"}`}>
+        <nav className="hidden flex-col gap-4 md:flex">
+          {groups.map((group) =>
+            group.links.length === 0 ? null : (
+              <div key={group.title}>
+                <p className="px-3 text-[11px] tracking-[0.16em] text-muted-foreground uppercase">{group.title}</p>
+                <div className="mt-1 flex flex-col gap-0.5">
+                  {group.links.map((link) => {
+                    const active = link.href === pathname || (link.href.startsWith("/app?") && pathname === "/app");
+                    return (
+                      <Link
+                        key={link.href + link.label}
+                        href={link.href}
+                        className={
+                          active ? "rounded-lg bg-primary px-3 py-2 text-primary-foreground" : "rounded-lg px-3 py-2 hover:bg-secondary"
+                        }
+                      >
+                        {link.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ),
+          )}
         </nav>
         <main className="min-w-0 pb-24 md:pb-6">{children}</main>
       </div>
-      {base ? (
+      {mobile.length > 0 ? (
         <nav className="fixed inset-x-0 bottom-0 z-[1000] grid grid-cols-5 border-t border-border bg-card/95 backdrop-blur-sm md:hidden">
-          {links.map((link) => {
-            const href = `${base}${link.href}`;
-            const active = link.href === "" ? pathname === base : pathname.startsWith(href);
+          {mobile.map((link) => {
+            const active = link.label === "Home" ? pathname === "/app" : pathname.startsWith(link.href);
             return (
               <Link
                 key={link.label}
-                href={href}
+                href={link.href}
                 className={active ? "px-1 py-3 text-center text-xs font-medium text-primary" : "px-1 py-3 text-center text-xs text-muted-foreground"}
               >
                 {link.label}

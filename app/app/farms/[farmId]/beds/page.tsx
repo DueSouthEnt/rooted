@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BedBoard } from "@/components/bed-board";
+import { PageHeader } from "@/components/floral";
 import { loadFarm, loadProfile } from "@/lib/records";
 
 export default async function BedsPage({ params }: { params: Promise<{ farmId: string }> }) {
@@ -11,16 +12,19 @@ export default async function BedsPage({ params }: { params: Promise<{ farmId: s
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="font-heading text-4xl">Beds</h1>
-        <p className="mt-2 text-muted-foreground">
-          Tall plants on the {site?.hemisphere === "south" ? "south" : "north"} side. Perennials in a bed you won't dig up for a row of calendula. Beds drawn on the{" "}
-          <Link href={`/app/farms/${farm.id}/map`} className="underline">
-            satellite map
-          </Link>{" "}
-          use the same plant counts.
-        </p>
-      </div>
+      <PageHeader
+        bloom="tulip"
+        kicker="Growing"
+        title="Beds"
+        lede={`Tall plants on the ${site?.hemisphere === "south" ? "south" : "north"} side. Perennials stay in a bed you won't dig up for a row of calendula.`}
+      />
+      <p className="text-sm text-muted-foreground">
+        Beds drawn on the{" "}
+        <Link href={`/app/farms/${farm.id}/map`} className="underline">
+          satellite map
+        </Link>{" "}
+        use the same plant counts, including each stripe inside a block.
+      </p>
       {planned.length === 0 ? (
         <p className="text-sm">
           Nothing planted on paper yet.{" "}
