@@ -14,6 +14,7 @@ export function PlantingDragSurface({
   onDragEnd,
   onDrop,
   onActivate,
+  onMove,
 }: {
   id: string;
   label: string;
@@ -23,6 +24,7 @@ export function PlantingDragSurface({
   onDragEnd: () => void;
   onDrop: (id: string, point: { x: number; y: number }) => void;
   onActivate: (id: string) => void;
+  onMove?: (point: { x: number; y: number }) => void;
 }) {
   const drag = useRef<{ id: string; label: string; x0: number; y0: number; moved: boolean } | null>(null);
   const ghost = useRef<HTMLDivElement>(null);
@@ -51,6 +53,7 @@ export function PlantingDragSurface({
           ghost.current.style.left = `${event.clientX}px`;
           ghost.current.style.top = `${event.clientY}px`;
           ghost.current.textContent = current.label;
+          onMove?.({ x: event.clientX, y: event.clientY });
         }}
         onPointerUp={(event) => {
           const current = drag.current;

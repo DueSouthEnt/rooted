@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PlantingDialog } from "@/components/planting-dialog";
 import { PlantingDragSurface } from "@/components/planting-drag";
@@ -37,8 +37,9 @@ export function YearTimeline({
   firstAutumn: string | null;
 }) {
   const router = useRouter();
+  const gridRef = useRef<HTMLDivElement>(null);
+  const dragPaint = useRef<{ free: Set<string>; hover: string | null; frame: number; point: { x: number; y: number } | null } | null>(null);
   const [closed, setClosed] = useState<Record<string, boolean>>({});
-  const [free, setFree] = useState<Set<string> | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [dialog, setDialog] = useState<PlantingDates | null | "new">(null);
   const days = diffDays(`${season}-01-01`, `${season}-12-31`) + 1;
@@ -47,29 +48,93 @@ export function YearTimeline({
   const springLeft = lastSpring ? frostMarker(lastSpring, season) : null;
   const autumnLeft = firstAutumn ? frostMarker(firstAutumn, season) : null;
   const groups = useMemo(() => groupBeds(beds), [beds]);
-  const bedIds = beds.map((bed) => bed.id);
-  const use = bedWeekUtilisation(bedIds, plantings, season);
+  const bedIds = useMemo(() => beds.map((bed) => bed.id), [beds]);
+  const byBed = useMemo(() => plantingsByBed(plantings), [plantings]);
+  const use = useMemo(() => bedWeekUtilisation(bedIds, plantings, season), [bedIds, plantings, season]);
   const month = today.startsWith(String(season)) ? Number(today.slice(5, 7)) : 6;
-  const emptyMonth = bedsEmptyInMonth(bedIds, plantings, season, month);
-  const gap = longestOpenGap(bedIds, plantings, season, today.startsWith(String(season)) ? today : `${season}-03-01`);
+  const emptyMonth = useMemo(() => bedsEmptyInMonth(bedIds, plantings, season, month), [bedIds, plantings, season, month]);
+  const gap = useMemo(
+    () => longestOpenGap(bedIds, plantings, season, today.startsWith(String(season)) ? today : `${season}-03-01`),
+    [bedIds, plantings, season, today],
+  );
   const quick = gap ? quickCrops.filter((crop) => crop.days <= gap.days && crop.days >= 21).sort((a, b) => a.days - b.days)[0] : null;
   const gapBed = beds.find((bed) => bed.id === gap?.bedId);
-  const unassigned = plantings.filter((item) => assignedBeds(item).length === 0);
+  const unassigned = useMemo(() => plantings.filter((item) => assignedBeds(item).length === 0), [plantings]);
 
-  function paint(id: string | null) {
-    if (!id) {
-      setFree(null);
-      return;
-    }
-    const planting = id.startsWith("sow:") ? suggestionDates(suggestions.find((item) => item.flower.slug === id.slice(4))) : plantings.find((item) => item.id === id);
-    if (!planting) return;
-    const end = planting.liftDate && planting.liftDate > planting.bloomEnd ? planting.liftDate : planting.bloomEnd;
-    setFree(new Set(freeBedIds(plantings, bedIds, planting.fieldDate, end, planting.id.startsWith("sow:") ? undefined : planting.id)));
-  }
+  const applyClasses = useCallback((free: Set<string> | null, hover: string | null) => {
+    const root = gridRef.current;
+    if (!root) return;
+    root.querySelectorAll<HTMLElement>("[data-bed-id]").forEach((row) => {
+      const id = row.dataset.bedId ?? "";
+      const isFree = Boolean(free?.has(id));
+      row.classList.toggle("bed-free", isFree);
+      row.classList.toggle("bed-busy", Boolean(free) && !isFree);
+      row.classList.toggle("bed-hover", hover === id && isFree);
+    });
+  }, []);
+
+  const plantingFor = useCallback(
+    (id: string) =>
+      id.startsWith("sow:") ? suggestionDates(suggestions.find((item) => item.flower.slug === id.slice(4))) : plantings.find((item) => item.id === id) ?? null,
+    [plantings, suggestions],
+  );
+
+  const beginDrag = useCallback(
+    (id: string) => {
+      const planting = plantingFor(id);
+      if (!planting) return;
+      const end = planting.liftDate && planting.liftDate > planting.bloomEnd ? planting.liftDate : planting.bloomEnd;
+      const free = new Set(freeBedIds(plantings, bedIds, planting.fieldDate, end, id.startsWith("sow:") ? undefined : id));
+      dragPaint.current = { free, hover: null, frame: 0, point: null };
+      applyClasses(free, null);
+    },
+    [applyClasses, bedIds, plantingFor, plantings],
+  );
+
+  const hoverDrag = useCallback(
+    (point: { x: number; y: number }) => {
+      const drag = dragPaint.current;
+      if (!drag) return;
+      drag.point = point;
+      if (drag.frame) return;
+      drag.frame = requestAnimationFrame(() => {
+        const current = dragPaint.current;
+        if (!current) return;
+        current.frame = 0;
+        const at = current.point;
+        if (!at) return;
+        const hit = document.elementFromPoint(at.x, at.y)?.closest<HTMLElement>("[data-bed-id]");
+        const next = hit?.dataset.bedId ?? null;
+        if (next === current.hover) return;
+        current.hover = next;
+        applyClasses(current.free, next);
+      });
+    },
+    [applyClasses],
+  );
+
+  const endDrag = useCallback(() => {
+    const drag = dragPaint.current;
+    if (drag?.frame) cancelAnimationFrame(drag.frame);
+    dragPaint.current = null;
+    applyClasses(null, null);
+  }, [applyClasses]);
+
+  const editPlanting = useCallback((planting: PlantingDates) => setDialog(planting), []);
+  const shift = useCallback(
+    async (id: string, moved: number) => {
+      const result = await shiftPlanting(farmId, id, moved);
+      if ("error" in result && result.error) setMessage(String(result.error));
+      else {
+        setMessage(null);
+        router.refresh();
+      }
+    },
+    [farmId, router],
+  );
 
   async function dropOn(id: string, point: { x: number; y: number }) {
-    setFree(null);
-    const planting = id.startsWith("sow:") ? suggestionDates(suggestions.find((item) => item.flower.slug === id.slice(4))) : plantings.find((item) => item.id === id);
+    const planting = plantingFor(id);
     if (!planting) return;
     const end = planting.liftDate && planting.liftDate > planting.bloomEnd ? planting.liftDate : planting.bloomEnd;
     const allowed = new Set(freeBedIds(plantings, bedIds, planting.fieldDate, end, planting.id.startsWith("sow:") ? undefined : planting.id));
@@ -107,6 +172,10 @@ export function YearTimeline({
       setMessage(null);
       router.refresh();
     }
+  }
+
+  function movePlanting(id: string, point: { x: number; y: number }) {
+    void dropOn(id, point);
   }
 
   return (
@@ -169,8 +238,9 @@ export function YearTimeline({
                   label={item.flower.commonName}
                   detail={`${item.action} · ${formatDateShort(item.when)}`}
                   testId={`sow-${item.flower.slug}`}
-                  onDragStart={paint}
-                  onDragEnd={() => setFree(null)}
+                  onDragStart={beginDrag}
+                  onDragEnd={endDrag}
+                  onMove={hoverDrag}
                   onDrop={(id, point) => void dropOn(id, point)}
                   onActivate={() => setDialog("new")}
                 />
@@ -183,8 +253,9 @@ export function YearTimeline({
                   label={planting.flowerName}
                   detail={`${planting.variety || "Garden mix"} · out ${formatDateShort(planting.fieldDate)} · ${planting.bedsNeeded ?? 1} bed`}
                   testId={`unassigned-${planting.id}`}
-                  onDragStart={paint}
-                  onDragEnd={() => setFree(null)}
+                  onDragStart={beginDrag}
+                  onDragEnd={endDrag}
+                  onMove={hoverDrag}
                   onDrop={(id, point) => void dropOn(id, point)}
                   onActivate={() => setDialog(planting)}
                 />
@@ -193,7 +264,7 @@ export function YearTimeline({
             {unassigned.length === 0 && suggestions.length === 0 ? <li className="text-sm text-muted-foreground">Nothing waiting. Add a planting and it will sit here.</li> : null}
           </ul>
         </aside>
-        <div className="max-h-[72vh] overflow-auto rounded-2xl border border-border bg-card" data-testid="bed-grid">
+        <div ref={gridRef} className="max-h-[72vh] overflow-auto rounded-2xl border border-border bg-card" data-testid="bed-grid">
           <div className="min-w-[920px]">
             <div className="sticky top-0 z-20 grid grid-cols-[12rem_minmax(0,1fr)] border-b bg-card">
               <div className="sticky left-0 z-30 border-r bg-card px-3 py-2 text-xs text-muted-foreground">Bed</div>
@@ -219,30 +290,20 @@ export function YearTimeline({
                   </button>
                   {closed[group.id]
                     ? null
-                    : group.beds.map((bed) => {
-                        const here = plantings.filter((planting) => assignedBeds(planting).includes(bed.id));
-                        const tone = free == null ? "" : free.has(bed.id) ? "bed-free" : "bed-dim";
-                        return (
-                          <div key={bed.id} data-bed-id={bed.id} data-testid={`bed-row-${bed.id}`} className={`grid grid-cols-[12rem_minmax(0,1fr)] border-t ${tone}`}>
-                            <div className="sticky left-0 z-10 border-r bg-card px-3 py-2 text-sm">
-                              <span className="block">{labelFor(bed)}</span>
-                              <span className="text-xs text-muted-foreground">{here.map((item) => item.flowerName).join(", ") || "Empty"}</span>
-                            </div>
-                            <div className="relative min-h-9">
-                              {here.map((planting) => (
-                                <Bar
-                                  key={planting.id}
-                                  planting={planting}
-                                  season={season}
-                                  onEdit={() => setDialog(planting)}
-                                  onShift={(moved) => void shift(planting.id, moved)}
-                                  onMove={(target) => void dropOn(planting.id, target)}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
+                    : group.beds.map((bed) => (
+                        <BedRow
+                          key={bed.id}
+                          bed={bed}
+                          plantings={byBed.get(bed.id) ?? EMPTY_PLANTINGS}
+                          season={season}
+                          onEdit={editPlanting}
+                          onShift={shift}
+                          onMove={movePlanting}
+                          onDragStart={beginDrag}
+                          onDragMove={hoverDrag}
+                          onDragEnd={endDrag}
+                        />
+                      ))}
                 </section>
               ))}
               {beds.length === 0 ? <p className="px-3 py-6 text-sm text-muted-foreground">Draw beds on the map, then they line up here.</p> : null}
@@ -263,15 +324,6 @@ export function YearTimeline({
       />
     </div>
   );
-
-  async function shift(id: string, moved: number) {
-    const result = await shiftPlanting(farmId, id, moved);
-    if ("error" in result && result.error) setMessage(String(result.error));
-    else {
-      setMessage(null);
-      router.refresh();
-    }
-  }
 }
 
 function Stat({ label, value, note }: { label: string; value: string; note: string }) {
@@ -292,51 +344,121 @@ function Marker({ left, className, label }: { left: number; className: string; l
   );
 }
 
+const EMPTY_PLANTINGS: PlantingDates[] = [];
+
+const BedRow = memo(function BedRow({
+  bed,
+  plantings,
+  season,
+  onEdit,
+  onShift,
+  onMove,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+}: {
+  bed: { id: string; name: string; blockName: string | null; blockIndex: number | null };
+  plantings: PlantingDates[];
+  season: number;
+  onEdit: (planting: PlantingDates) => void;
+  onShift: (id: string, days: number) => void;
+  onMove: (id: string, point: { x: number; y: number }) => void;
+  onDragStart: (id: string) => void;
+  onDragMove: (point: { x: number; y: number }) => void;
+  onDragEnd: () => void;
+}) {
+  const renders = useRef(0);
+  renders.current += 1;
+  return (
+    <div data-bed-id={bed.id} data-testid={`bed-row-${bed.id}`} data-renders={renders.current} className="bed-row grid grid-cols-[12rem_minmax(0,1fr)] border-t">
+      <div className="bed-label sticky left-0 z-10 border-r px-3 py-2 text-sm">
+        <span className="block">{labelFor(bed)}</span>
+        <span className="text-xs text-muted-foreground">{plantings.map((item) => item.flowerName).join(", ") || "Empty"}</span>
+      </div>
+      <div className="relative min-h-9">
+        {plantings.map((planting) => (
+          <Bar
+            key={planting.id}
+            planting={planting}
+            season={season}
+            onEdit={onEdit}
+            onShift={onShift}
+            onMove={onMove}
+            onDragStart={onDragStart}
+            onDragMove={onDragMove}
+            onDragEnd={onDragEnd}
+          />
+        ))}
+      </div>
+    </div>
+  );
+});
+
 function Bar({
   planting,
   season,
   onEdit,
   onShift,
   onMove,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
 }: {
   planting: PlantingDates;
   season: number;
-  onEdit: () => void;
-  onShift: (days: number) => void;
-  onMove: (point: { x: number; y: number }) => void;
+  onEdit: (planting: PlantingDates) => void;
+  onShift: (id: string, days: number) => void;
+  onMove: (id: string, point: { x: number; y: number }) => void;
+  onDragStart: (id: string) => void;
+  onDragMove: (point: { x: number; y: number }) => void;
+  onDragEnd: () => void;
 }) {
   const bars = yearBars(planting, season);
-  const [origin, setOrigin] = useState<{ x: number; y: number; width: number } | null>(null);
-  const [preview, setPreview] = useState(0);
+  const slide = useRef<HTMLSpanElement>(null);
+  const origin = useRef<{ x: number; y: number; width: number } | null>(null);
+  const preview = useRef(0);
   return (
     <div
       className="relative h-8 cursor-grab"
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         event.currentTarget.setPointerCapture(event.pointerId);
-        setOrigin({ x: event.clientX, y: event.clientY, width: event.currentTarget.getBoundingClientRect().width });
+        origin.current = { x: event.clientX, y: event.clientY, width: event.currentTarget.getBoundingClientRect().width };
+        preview.current = 0;
+        onDragStart(planting.id);
       }}
       onPointerMove={(event) => {
-        if (!origin) return;
-        setPreview(Math.round(((event.clientX - origin.x) / origin.width) * 365));
+        const started = origin.current;
+        if (!started || !slide.current) return;
+        const days = Math.round(((event.clientX - started.x) / started.width) * 365);
+        preview.current = days;
+        slide.current.style.transform = `translateX(${(days / 365) * 100}%)`;
+        onDragMove({ x: event.clientX, y: event.clientY });
       }}
       onPointerUp={(event) => {
-        const moved = preview;
-        const started = origin;
-        setOrigin(null);
-        setPreview(0);
+        const moved = preview.current;
+        const started = origin.current;
+        origin.current = null;
+        preview.current = 0;
+        if (slide.current) slide.current.style.transform = "";
+        onDragEnd();
         if (!started) return;
         const vertical = Math.abs(event.clientY - started.y);
         const horizontal = Math.abs(event.clientX - started.x);
         if (vertical > 24 && vertical > horizontal) {
-          onMove({ x: event.clientX, y: event.clientY });
+          onMove(planting.id, { x: event.clientX, y: event.clientY });
           return;
         }
-        if (Math.abs(moved) >= 1) onShift(moved);
-        else onEdit();
+        if (Math.abs(moved) >= 1) onShift(planting.id, moved);
+        else onEdit(planting);
+      }}
+      onPointerCancel={() => {
+        origin.current = null;
+        if (slide.current) slide.current.style.transform = "";
+        onDragEnd();
       }}
     >
-      <span className="absolute inset-y-1" style={{ left: `${preview * (100 / 365)}%`, right: `${-preview * (100 / 365)}%` }}>
+      <span ref={slide} className="absolute inset-y-1">
         {bars.establishing ? <span className="absolute top-0 h-full rounded-sm bg-[repeating-linear-gradient(90deg,#e7f0e4_0_6px,transparent_6px_10px)]" style={boxStyle(bars.establishing)} /> : null}
         {bars.growing ? <span className="absolute top-0 h-full rounded-sm bg-[#f3e0c8]" style={boxStyle(bars.growing)} /> : null}
         {bars.bloom ? <span className="absolute top-0 h-full rounded-sm bg-[#e7b7c6]" style={boxStyle(bars.bloom)} /> : null}
@@ -365,6 +487,18 @@ function groupBeds(beds: YearTimelineBeds): { id: string; label: string; beds: Y
   const list = [...groups.values()];
   if (singles.length) list.unshift({ id: "single", label: "Single beds", beds: singles });
   return list;
+}
+
+function plantingsByBed(plantings: PlantingDates[]): Map<string, PlantingDates[]> {
+  const map = new Map<string, PlantingDates[]>();
+  for (const planting of plantings) {
+    for (const bedId of assignedBeds(planting)) {
+      const list = map.get(bedId) ?? [];
+      list.push(planting);
+      map.set(bedId, list);
+    }
+  }
+  return map;
 }
 
 type YearTimelineBeds = { id: string; name: string; blockId: string | null; blockName: string | null; blockIndex: number | null }[];

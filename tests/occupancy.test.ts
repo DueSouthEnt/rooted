@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bedsEmptyInMonth, bedWeekUtilisation, consecutiveBeds, freeBedIds, groundSpan, longestOpenGap } from "@/lib/occupancy";
+import { bedsEmptyInMonth, bedWeekUtilisation, classifyBeds, consecutiveBeds, freeBedIds, groundSpan, longestOpenGap } from "@/lib/occupancy";
 import type { PlantingDates } from "@/lib/schedule";
 
 function planting(partial: Partial<PlantingDates> & Pick<PlantingDates, "id" | "fieldDate" | "bloomEnd">): PlantingDates {
@@ -48,6 +48,18 @@ describe("bed occupancy", () => {
     const row = planting({ id: "a", fieldDate: "2027-04-01", bloomEnd: "2027-07-15", bedId: "bed-1" });
     expect(freeBedIds([row], ["bed-1"], "2027-07-15", "2027-07-20")).toEqual([]);
     expect(freeBedIds([row], ["bed-1"], "2027-07-16", "2027-08-01", "a")).toEqual(["bed-1"]);
+  });
+
+  it("treats the planting being moved as free, and marks the other bed busy", () => {
+    const staying = planting({ id: "stay", fieldDate: "2027-05-01", bloomEnd: "2027-08-01", bedId: "bed-2" });
+    const moving = planting({ id: "move", fieldDate: "2027-05-01", bloomEnd: "2027-08-01", bedId: "bed-1" });
+    const free = freeBedIds([staying, moving], ["bed-1", "bed-2", "bed-3"], "2027-05-01", "2027-08-01", "move");
+    expect(free).toEqual(["bed-1", "bed-3"]);
+    expect(classifyBeds(["bed-1", "bed-2", "bed-3"], free)).toEqual([
+      { id: "bed-1", state: "free" },
+      { id: "bed-2", state: "busy" },
+      { id: "bed-3", state: "free" },
+    ]);
   });
 
   it("only accepts a run of consecutive free beds", () => {

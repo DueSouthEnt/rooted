@@ -162,16 +162,29 @@
   box-shadow: 0 8px 20px rgb(63 92 73 / 25%);
 }
 
-.bed-free {
-  background: color-mix(in oklch, var(--secondary) 80%, white);
+.bed-row,
+.bed-row > .bed-label {
+  background: var(--card);
 }
 
-.bed-clash {
-  background: color-mix(in oklch, var(--accent) 70%, white);
+.bed-row.bed-free,
+.bed-row.bed-free > .bed-label {
+  background: #b7d7a8;
 }
 
-.bed-dim {
-  opacity: 0.38;
+.bed-row.bed-busy,
+.bed-row.bed-busy > .bed-label {
+  background: #f3c9cf;
+}
+
+.bed-row.bed-busy {
+  opacity: 0.55;
+}
+
+.bed-row.bed-hover.bed-free,
+.bed-row.bed-hover.bed-free > .bed-label {
+  background: #8fbf7a;
+  outline: 2px solid #3f5c49;
 }
 
 .leaflet-div-icon.bed-index span {

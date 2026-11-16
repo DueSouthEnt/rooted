@@ -42,6 +42,12 @@ export function spanForPlanting(planting: PlantingDates): GroundSpan {
   return { start: planting.fieldDate, end };
 }
 
+/** Free beds stay green while dragging. The rest are busy for that spell. */
+export function classifyBeds(bedIds: string[], freeIds: Iterable<string>): { id: string; state: "free" | "busy" }[] {
+  const free = new Set(freeIds);
+  return bedIds.map((id) => ({ id, state: free.has(id) ? "free" : "busy" }));
+}
+
 export function freeBedIds(plantings: PlantingDates[], bedIds: string[], start: string, end: string, ignoreId?: string): string[] {
   const busy = new Set<string>();
   const year = Number(start.slice(0, 4));
