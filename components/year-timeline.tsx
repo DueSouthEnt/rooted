@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PlantingDialog } from "@/components/planting-dialog";
 import { PlantingDragSurface } from "@/components/planting-drag";
@@ -418,10 +418,14 @@ const BedRow = memo(function BedRow({
   onDragMove: (point: { x: number; y: number }) => void;
   onDragEnd: () => void;
 }) {
+  const node = useRef<HTMLDivElement>(null);
   const renders = useRef(0);
   renders.current += 1;
+  useEffect(() => {
+    node.current?.setAttribute("data-renders", String(renders.current));
+  });
   return (
-    <div data-bed-id={bed.id} data-testid={`bed-row-${bed.id}`} data-renders={renders.current} className="bed-row grid h-8 grid-cols-[12rem_minmax(0,1fr)] border-t">
+    <div ref={node} data-bed-id={bed.id} data-testid={`bed-row-${bed.id}`} className="bed-row grid h-8 grid-cols-[12rem_minmax(0,1fr)] border-t">
       <div className="bed-label sticky left-0 z-10 flex items-center border-r px-3 text-xs">
         <span className="truncate">{labelFor(bed)}</span>
       </div>

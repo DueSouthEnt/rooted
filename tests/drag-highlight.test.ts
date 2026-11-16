@@ -29,6 +29,7 @@ describe.skipIf(!chrome || !live)("year plan drag highlight", () => {
     await Promise.all([page.waitForNavigation({ waitUntil: "networkidle0" }), page.click("button[type=submit]")]);
     await page.goto(`${base}/app/farms/cb0b0301-5cac-45f1-9621-07c49dbb575f/timeline`, { waitUntil: "networkidle0" });
     await page.waitForSelector("[data-testid='sow-sweet-pea']");
+    await page.waitForFunction(() => document.querySelectorAll("[data-renders]").length > 5);
     const before = await page.$$eval("[data-renders]", (rows) => rows.map((row) => row.getAttribute("data-renders")));
     expect(before.length).toBeGreaterThan(5);
 
