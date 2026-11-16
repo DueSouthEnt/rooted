@@ -12,7 +12,7 @@ export default function HomePage() {
       </div>
       <div className="relative mx-auto flex max-w-5xl flex-col px-5 py-8 sm:py-14">
         <header className="flex items-center justify-between">
-          <p className="font-heading text-2xl tracking-tight">{APP_NAME}</p>
+          <p className="wordmark text-foreground">{APP_NAME}</p>
           <Link href="/login" className="text-sm underline decoration-[#e4d5c8] underline-offset-4">
             Log in
           </Link>

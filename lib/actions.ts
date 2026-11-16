@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import type { Flower } from "@/lib/flower";
@@ -602,7 +603,11 @@ function asDates(row: PlantingRecord, name: string, colour: string): PlantingDat
     firstBloomYear: row.first_bloom_year,
     spansYears: row.spans_years,
     bedId: row.bed_id ?? row.planting_beds?.[0]?.bed_id ?? null,
-    bedIds: row.planting_beds?.map((item) => item.bed_id) ?? (row.bed_id ? [row.bed_id] : []),
+    bedIds: row.planting_beds?.map((item) => item.bed_id).filter(Boolean).length
+      ? row.planting_beds.map((item) => item.bed_id)
+      : row.bed_id
+        ? [row.bed_id]
+        : [],
     bedsNeeded: row.beds_needed ?? 1,
     daysToMaturity: row.days_to_maturity ?? undefined,
     daysInNursery: row.days_in_nursery ?? undefined,
@@ -637,12 +642,15 @@ async function writeBeds(
   previous: string[],
   next: string[],
   rows: PlantingRecord[],
-) {
-  await supabase.from("planting_beds").delete().eq("planting_id", plantingId);
+): Promise<string | null> {
+  const removed = await supabase.from("planting_beds").delete().eq("planting_id", plantingId);
+  if (removed.error) return `Couldn't clear the old bed: ${removed.error.message}`;
   if (next.length) {
-    await supabase.from("planting_beds").insert(next.map((bedId) => ({ planting_id: plantingId, bed_id: bedId })));
+    const inserted = await supabase.from("planting_beds").insert(next.map((bedId) => ({ planting_id: plantingId, bed_id: bedId })));
+    if (inserted.error) return `Couldn't put that on the bed: ${inserted.error.message}`;
   }
-  await supabase.from("plantings").update({ bed_id: next[0] ?? null }).eq("id", plantingId);
+  const updated = await supabase.from("plantings").update({ bed_id: next[0] ?? null }).eq("id", plantingId);
+  if (updated.error) return `Couldn't remember that bed: ${updated.error.message}`;
   for (const bedId of previous) {
     if (next.includes(bedId)) continue;
     const still = rows.some(
@@ -651,11 +659,25 @@ async function writeBeds(
         row.flower_slug === flowerSlug &&
         (row.bed_id === bedId || row.planting_beds?.some((item) => item.bed_id === bedId)),
     );
-    if (!still) await supabase.from("bed_plants").delete().eq("bed_id", bedId).eq("flower_slug", flowerSlug);
+    if (!still) {
+      const cleared = await supabase.from("bed_plants").delete().eq("bed_id", bedId).eq("flower_slug", flowerSlug);
+      if (cleared.error) return cleared.error.message;
+    }
   }
   for (const bedId of next) {
-    await supabase.from("bed_plants").upsert({ bed_id: bedId, flower_slug: flowerSlug }, { onConflict: "bed_id,flower_slug" });
+    const planted = await supabase.from("bed_plants").upsert({ bed_id: bedId, flower_slug: flowerSlug }, { onConflict: "bed_id,flower_slug" });
+    if (planted.error) return planted.error.message;
   }
+  return null;
+}
+
+function finishPlantingQuietly(farmId: string) {
+  after(() => {
+    void refreshTasks(farmId);
+  });
+  revalidatePath(`/app/farms/${farmId}/week`);
+  revalidatePath(`/app/farms/${farmId}/map`);
+  revalidatePath(`/app/farms/${farmId}/plan`);
 }
 
 export async function addPlanting(
@@ -680,6 +702,7 @@ export async function addPlanting(
     spacingCm?: number;
     bedLengthM?: number;
     notes?: string;
+    quiet?: boolean;
   },
 ) {
   const { supabase, flowers, farm, beds } = await loadFarm(farmId);
@@ -732,10 +755,16 @@ export async function addPlanting(
       successions: 1,
     });
   }
-  if (wanted.length) await writeBeds(supabase, data.id as string, flower.slug, [], wanted, rows);
-  await refreshTasks(farmId);
-  revalidateFarm(farmId);
-  return { id: data.id as string };
+  if (wanted.length) {
+    const placed = await writeBeds(supabase, data.id as string, flower.slug, [], wanted, rows);
+    if (placed) return { error: placed };
+  }
+  if (input.quiet) finishPlantingQuietly(farmId);
+  else {
+    await refreshTasks(farmId);
+    revalidateFarm(farmId);
+  }
+  return { id: data.id as string, bedIds: wanted };
 }
 
 export async function assignPlantingBeds(farmId: string, plantingId: string, bedIds: string[]) {
@@ -754,10 +783,10 @@ export async function assignPlantingBeds(farmId: string, plantingId: string, bed
   if (bedIds.some((bedId) => !free.includes(bedId))) {
     return { error: "That bed is already planted for the whole time this one is in the ground." };
   }
-  await writeBeds(supabase, plantingId, row.flower_slug, assignedBeds(current), bedIds, rows);
-  await refreshTasks(farmId);
-  revalidateFarm(farmId);
-  return { ok: true as const };
+  const placed = await writeBeds(supabase, plantingId, row.flower_slug, assignedBeds(current), bedIds, rows);
+  if (placed) return { error: placed };
+  finishPlantingQuietly(farmId);
+  return { ok: true as const, bedIds };
 }
 
 export async function assignPlantingBed(farmId: string, plantingId: string, bedId: string) {
@@ -770,7 +799,8 @@ export async function clearPlantingBed(farmId: string, plantingId: string) {
   const row = rows.find((item) => item.id === plantingId);
   if (!row) return { error: "That planting has gone." };
   const previous = row.planting_beds?.map((item) => item.bed_id) ?? (row.bed_id ? [row.bed_id] : []);
-  await writeBeds(supabase, plantingId, row.flower_slug, previous, [], rows);
+  const cleared = await writeBeds(supabase, plantingId, row.flower_slug, previous, [], rows);
+  if (cleared) return { error: cleared };
   await refreshTasks(farmId);
   revalidateFarm(farmId);
   return { ok: true as const };

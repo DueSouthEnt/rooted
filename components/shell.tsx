@@ -65,7 +65,6 @@ export function Shell({
     {
       title: "Operations",
       links: [
-        ...(base ? [{ href: `${base}/place`, label: "Frost dates" }] : []),
         { href: "/app/guide", label: "What the words mean" },
         { href: "/app/settings", label: "Settings" },
       ],
@@ -86,8 +85,8 @@ export function Shell({
     <div className="min-h-full">
       <header className="border-b border-border bg-card/90 backdrop-blur-sm">
         <div className={`mx-auto flex items-center justify-between gap-3 px-4 py-3 ${wide ? "max-w-[1500px]" : "max-w-6xl"}`}>
-          <Link href="/app" className="font-heading flex items-center gap-2 text-2xl tracking-tight">
-            <FlowerMark />
+          <Link href="/app" className="wordmark flex items-center gap-2 text-foreground">
+            <BouquetMark />
             {APP_NAME}
           </Link>
           <div className="flex items-center gap-2 text-sm">
@@ -154,12 +153,19 @@ export function Shell({
   );
 }
 
-function FlowerMark() {
+function BouquetMark() {
   return (
-    <svg viewBox="0 0 32 32" aria-hidden className="size-7 text-primary">
-      <circle cx="16" cy="14" r="3" fill="#f3c1cb" />
-      <path d="M16 17c0 4-3 8-3 8M16 17c0 4 3 8 3 8" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      <path d="M16 11c-3-4-8-4-9-1 3 1 6 2 9 5 3-3 6-4 9-5-1-3-6-3-9 1Z" fill="none" stroke="currentColor" strokeWidth="1.4" />
+    <svg viewBox="0 0 48 48" aria-hidden className="size-9 text-[#3f5c49]">
+      <g fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M24 44V26" />
+        <path d="M24 32c-6 2-10 8-10 8" />
+        <path d="M24 34c6 1 11 6 11 6" />
+        <path stroke="#d9899a" d="M24 18c-4-6-12-6-12 1 4 1 8 2 12 6 4-4 8-5 12-6 0-7-8-7-12-1Z" />
+        <path stroke="#c45b86" d="M14 22c-5-3-10-1-10 4 4 1 7 1 10 4 2-3 2-6 0-8Z" />
+        <path stroke="#6d8a74" d="M34 22c5-3 10-1 10 4-4 1-7 1-10 4-2-3-2-6 0-8Z" />
+        <path stroke="#e7b7c6" d="M18 14c-3-5-1-9 3-9 1 4 1 6 2 8" />
+        <path stroke="#e7b7c6" d="M30 14c3-5 1-9-3-9-1 4-1 6-2 8" />
+      </g>
     </svg>
   );
 }

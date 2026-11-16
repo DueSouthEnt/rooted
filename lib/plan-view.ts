@@ -2,6 +2,12 @@ import type { Flower } from "@/lib/flower";
 import type { PlantingRecord } from "@/lib/records";
 import { isPlantingMethod, type PlantingDates } from "@/lib/schedule";
 
+function linkedBeds(row: PlantingRecord): string[] {
+  const linked = row.planting_beds?.map((item) => item.bed_id).filter(Boolean) ?? [];
+  if (linked.length) return linked;
+  return row.bed_id ? [row.bed_id] : [];
+}
+
 export function toPlantingDates(row: PlantingRecord, flowers: Flower[]): PlantingDates | null {
   const flower = flowers.find((item) => item.slug === row.flower_slug);
   if (!isPlantingMethod(row.method)) return null;
@@ -20,7 +26,7 @@ export function toPlantingDates(row: PlantingRecord, flowers: Flower[]): Plantin
     firstBloomYear: row.first_bloom_year,
     spansYears: row.spans_years,
     bedId: row.bed_id,
-    bedIds: row.planting_beds?.map((item) => item.bed_id) ?? (row.bed_id ? [row.bed_id] : []),
+    bedIds: linkedBeds(row),
     bedsNeeded: row.beds_needed ?? 1,
     daysToMaturity: row.days_to_maturity ?? undefined,
     daysInNursery: row.days_in_nursery ?? undefined,

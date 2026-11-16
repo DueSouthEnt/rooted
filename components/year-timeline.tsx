@@ -41,7 +41,15 @@ export function YearTimeline({
   const dragPaint = useRef<{ free: Set<string>; hover: string | null; frame: number; point: { x: number; y: number } | null } | null>(null);
   const [closed, setClosed] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const [dialog, setDialog] = useState<PlantingDates | null | "new">(null);
+  const [rows, setRows] = useState(plantings);
+  const propsKey = plantings.map((item) => `${item.id}:${assignedBeds(item).join(".")}:${item.fieldDate}`).join("|");
+  const propsKeyRef = useRef(propsKey);
+  if (propsKeyRef.current !== propsKey) {
+    propsKeyRef.current = propsKey;
+    setRows(plantings);
+  }
   const days = diffDays(`${season}-01-01`, `${season}-12-31`) + 1;
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const todayLeft = today.startsWith(String(season)) ? (diffDays(`${season}-01-01`, today) / days) * 100 : null;
@@ -49,17 +57,17 @@ export function YearTimeline({
   const autumnLeft = firstAutumn ? frostMarker(firstAutumn, season) : null;
   const groups = useMemo(() => groupBeds(beds), [beds]);
   const bedIds = useMemo(() => beds.map((bed) => bed.id), [beds]);
-  const byBed = useMemo(() => plantingsByBed(plantings), [plantings]);
-  const use = useMemo(() => bedWeekUtilisation(bedIds, plantings, season), [bedIds, plantings, season]);
+  const byBed = useMemo(() => plantingsByBed(rows), [rows]);
+  const use = useMemo(() => bedWeekUtilisation(bedIds, rows, season), [bedIds, rows, season]);
   const month = today.startsWith(String(season)) ? Number(today.slice(5, 7)) : 6;
-  const emptyMonth = useMemo(() => bedsEmptyInMonth(bedIds, plantings, season, month), [bedIds, plantings, season, month]);
+  const emptyMonth = useMemo(() => bedsEmptyInMonth(bedIds, rows, season, month), [bedIds, rows, season, month]);
   const gap = useMemo(
-    () => longestOpenGap(bedIds, plantings, season, today.startsWith(String(season)) ? today : `${season}-03-01`),
-    [bedIds, plantings, season, today],
+    () => longestOpenGap(bedIds, rows, season, today.startsWith(String(season)) ? today : `${season}-03-01`),
+    [bedIds, rows, season, today],
   );
   const quick = gap ? quickCrops.filter((crop) => crop.days <= gap.days && crop.days >= 21).sort((a, b) => a.days - b.days)[0] : null;
   const gapBed = beds.find((bed) => bed.id === gap?.bedId);
-  const unassigned = useMemo(() => plantings.filter((item) => assignedBeds(item).length === 0), [plantings]);
+  const unassigned = useMemo(() => rows.filter((item) => assignedBeds(item).length === 0), [rows]);
 
   const applyClasses = useCallback((free: Set<string> | null, hover: string | null) => {
     const root = gridRef.current;
@@ -75,8 +83,8 @@ export function YearTimeline({
 
   const plantingFor = useCallback(
     (id: string) =>
-      id.startsWith("sow:") ? suggestionDates(suggestions.find((item) => item.flower.slug === id.slice(4))) : plantings.find((item) => item.id === id) ?? null,
-    [plantings, suggestions],
+      id.startsWith("sow:") ? suggestionDates(suggestions.find((item) => item.flower.slug === id.slice(4))) : rows.find((item) => item.id === id) ?? null,
+    [rows, suggestions],
   );
 
   const beginDrag = useCallback(
@@ -84,11 +92,11 @@ export function YearTimeline({
       const planting = plantingFor(id);
       if (!planting) return;
       const end = planting.liftDate && planting.liftDate > planting.bloomEnd ? planting.liftDate : planting.bloomEnd;
-      const free = new Set(freeBedIds(plantings, bedIds, planting.fieldDate, end, id.startsWith("sow:") ? undefined : id));
+      const free = new Set(freeBedIds(rows, bedIds, planting.fieldDate, end, id.startsWith("sow:") ? undefined : id));
       dragPaint.current = { free, hover: null, frame: 0, point: null };
       applyClasses(free, null);
     },
-    [applyClasses, bedIds, plantingFor, plantings],
+    [applyClasses, bedIds, plantingFor, rows],
   );
 
   const hoverDrag = useCallback(
@@ -133,24 +141,48 @@ export function YearTimeline({
     [farmId, router],
   );
 
+  function showError(text: string) {
+    setToast(text);
+    setMessage(text);
+    window.setTimeout(() => setToast((current) => (current === text ? null : current)), 5000);
+  }
+
   async function dropOn(id: string, point: { x: number; y: number }) {
     const planting = plantingFor(id);
     if (!planting) return;
     const end = planting.liftDate && planting.liftDate > planting.bloomEnd ? planting.liftDate : planting.bloomEnd;
-    const allowed = new Set(freeBedIds(plantings, bedIds, planting.fieldDate, end, planting.id.startsWith("sow:") ? undefined : planting.id));
-    const hit = document.elementFromPoint(point.x, point.y)?.closest<HTMLElement>("[data-bed-id]");
-    const bedId = hit?.dataset.bedId;
+    const allowed = new Set(freeBedIds(rows, bedIds, planting.fieldDate, end, planting.id.startsWith("sow:") ? undefined : planting.id));
+    const bedId = bedUnderPointer(gridRef.current, point.x, point.y);
     if (!bedId || !allowed.has(bedId)) {
-      setMessage(bedId ? "That bed is taken for the whole time this planting is in the ground." : "Drop it on a free bed. The dates stay as they are.");
+      showError(bedId ? "That bed is taken for the whole time this planting is in the ground." : "Drop it on a free bed. The dates stay as they are.");
       return;
     }
     const ordered = bedsInGroup(beds, bedId).map((bed) => bed.id);
     const run = consecutiveBeds(ordered, bedId, planting.bedsNeeded ?? 1, [...allowed]);
     if (!run) {
-      setMessage(`This one needs ${planting.bedsNeeded ?? 1} beds in a row, and the neighbours are not free.`);
+      showError(`This one needs ${planting.bedsNeeded ?? 1} beds in a row, and the neighbours are not free.`);
       return;
     }
+    gridRef.current?.setAttribute("data-save", "");
+    const started = performance.now();
     const suggestion = id.startsWith("sow:") ? suggestions.find((item) => item.flower.slug === id.slice(4)) : null;
+    const previous = rows;
+    const optimisticId = suggestion ? `pending-${suggestion.flower.slug}` : id;
+    const placed: PlantingDates = suggestion
+      ? {
+          ...planting,
+          id: optimisticId,
+          bedId: run[0] ?? null,
+          bedIds: run,
+        }
+      : { ...planting, bedId: run[0] ?? null, bedIds: run };
+    setRows((current) => {
+      const without = current.filter((item) => item.id !== id && item.id !== optimisticId);
+      return [...without, placed];
+    });
+    requestAnimationFrame(() => {
+      gridRef.current?.setAttribute("data-settled-ms", String(Math.round(performance.now() - started)));
+    });
     const result = suggestion
       ? await addPlanting(farmId, {
           flowerSlug: suggestion.flower.slug,
@@ -165,13 +197,20 @@ export function YearTimeline({
           spansYears: suggestion.window.spansYears,
           bedIds: run,
           bedsNeeded: 1,
+          quiet: true,
         })
       : await assignPlantingBeds(farmId, id, run);
-    if ("error" in result && result.error) setMessage(String(result.error));
-    else {
-      setMessage(null);
-      router.refresh();
+    if ("error" in result && result.error) {
+      setRows(previous);
+      gridRef.current?.setAttribute("data-save", "error");
+      showError(String(result.error));
+      return;
     }
+    if (suggestion && "id" in result && result.id) {
+      setRows((current) => current.map((item) => (item.id === optimisticId ? { ...item, id: result.id as string } : item)));
+    }
+    gridRef.current?.setAttribute("data-save", "ok");
+    setMessage(null);
   }
 
   function movePlanting(id: string, point: { x: number; y: number }) {
@@ -226,6 +265,11 @@ export function YearTimeline({
         </p>
       ) : null}
       {message ? <p className="rounded-xl bg-accent px-3 py-2 text-sm" data-testid="assign-message">{message}</p> : null}
+      {toast ? (
+        <p className="fixed bottom-6 left-1/2 z-[80] -translate-x-1/2 rounded-full bg-[#3f2a2e] px-4 py-2 text-sm text-[#fffaf4] shadow-lg" data-testid="save-toast" role="status">
+          {toast}
+        </p>
+      ) : null}
       <div className="grid items-start gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
         <aside className="rounded-2xl border border-border bg-card p-3" data-testid="unplanted-tray">
           <p className="font-heading text-xl">Unplanted</p>
@@ -268,16 +312,23 @@ export function YearTimeline({
           <div className="min-w-[920px]">
             <div className="sticky top-0 z-20 grid grid-cols-[12rem_minmax(0,1fr)] border-b bg-card">
               <div className="sticky left-0 z-30 border-r bg-card px-3 py-2 text-xs text-muted-foreground">Bed</div>
-              <div className="flex">
-                {months.map((monthName) => (
-                  <div key={monthName} className="w-[8.333%] border-l px-1 py-2 text-[11px] text-muted-foreground">{monthName}</div>
-                ))}
+              <div>
+                <div className="flex">
+                  {months.map((monthName) => (
+                    <div key={monthName} className="w-[8.333%] border-l px-1 py-1 text-[11px] text-muted-foreground">{monthName}</div>
+                  ))}
+                </div>
+                <div className="relative h-4 border-t">
+                  {weekTicks(season).map((tick) => (
+                    <span key={tick.left} className="absolute top-0 text-[10px] text-muted-foreground" style={{ left: `${tick.left}%` }}>{tick.label}</span>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="relative">
               {todayLeft != null ? <Marker left={todayLeft} className="bg-primary" label="Today" /> : null}
-              {springLeft != null ? <Marker left={springLeft} className="bg-[#7f9a86]" label="Last frost" /> : null}
-              {autumnLeft != null ? <Marker left={autumnLeft} className="bg-[#d9899a]" label="First frost" /> : null}
+              {springLeft != null ? <Marker left={springLeft} className="bg-[#7f9a86]/70" label="" /> : null}
+              {autumnLeft != null ? <Marker left={autumnLeft} className="bg-[#d9899a]/70" label="" /> : null}
               {groups.map((group) => (
                 <section key={group.id}>
                   <button
@@ -370,12 +421,11 @@ const BedRow = memo(function BedRow({
   const renders = useRef(0);
   renders.current += 1;
   return (
-    <div data-bed-id={bed.id} data-testid={`bed-row-${bed.id}`} data-renders={renders.current} className="bed-row grid grid-cols-[12rem_minmax(0,1fr)] border-t">
-      <div className="bed-label sticky left-0 z-10 border-r px-3 py-2 text-sm">
-        <span className="block">{labelFor(bed)}</span>
-        <span className="text-xs text-muted-foreground">{plantings.map((item) => item.flowerName).join(", ") || "Empty"}</span>
+    <div data-bed-id={bed.id} data-testid={`bed-row-${bed.id}`} data-renders={renders.current} className="bed-row grid h-8 grid-cols-[12rem_minmax(0,1fr)] border-t">
+      <div className="bed-label sticky left-0 z-10 flex items-center border-r px-3 text-xs">
+        <span className="truncate">{labelFor(bed)}</span>
       </div>
-      <div className="relative min-h-9">
+      <div className="relative h-8">
         {plantings.map((planting) => (
           <Bar
             key={planting.id}
@@ -392,6 +442,13 @@ const BedRow = memo(function BedRow({
       </div>
     </div>
   );
+}, (previous, next) => {
+  if (previous.bed.id !== next.bed.id || previous.season !== next.season) return false;
+  if (previous.plantings.length !== next.plantings.length) return false;
+  return previous.plantings.every((item, index) => {
+    const other = next.plantings[index];
+    return item.id === other?.id && item.fieldDate === other.fieldDate && item.bloomEnd === other.bloomEnd && item.bedId === other.bedId;
+  });
 });
 
 function Bar({
@@ -419,7 +476,7 @@ function Bar({
   const preview = useRef(0);
   return (
     <div
-      className="relative h-8 cursor-grab"
+      className="relative h-full cursor-grab"
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -441,11 +498,11 @@ function Bar({
         origin.current = null;
         preview.current = 0;
         if (slide.current) slide.current.style.transform = "";
+        const bedId = bedUnderPointer(null, event.clientX, event.clientY);
+        const staying = assignedBeds(planting);
         onDragEnd();
         if (!started) return;
-        const vertical = Math.abs(event.clientY - started.y);
-        const horizontal = Math.abs(event.clientX - started.x);
-        if (vertical > 24 && vertical > horizontal) {
+        if (bedId && !staying.includes(bedId)) {
           onMove(planting.id, { x: event.clientX, y: event.clientY });
           return;
         }
@@ -458,14 +515,45 @@ function Bar({
         onDragEnd();
       }}
     >
-      <span ref={slide} className="absolute inset-y-1">
-        {bars.establishing ? <span className="absolute top-0 h-full rounded-sm bg-[repeating-linear-gradient(90deg,#e7f0e4_0_6px,transparent_6px_10px)]" style={boxStyle(bars.establishing)} /> : null}
-        {bars.growing ? <span className="absolute top-0 h-full rounded-sm bg-[#f3e0c8]" style={boxStyle(bars.growing)} /> : null}
-        {bars.bloom ? <span className="absolute top-0 h-full rounded-sm bg-[#e7b7c6]" style={boxStyle(bars.bloom)} /> : null}
-        {bars.lift ? <span className="absolute top-0 h-full rounded-sm bg-[#c45b86]" style={boxStyle(bars.lift)} /> : null}
+      <span ref={slide} className="absolute inset-x-0 inset-y-0.5" data-testid={`gantt-bar-${planting.id}`}>
+        {bars.nursery ? <span className="absolute top-0 h-full rounded-l-sm bg-[#e7f0e4]" style={boxStyle(bars.nursery)} /> : null}
+        {bars.establishing ? <span className="absolute top-0 h-full bg-[repeating-linear-gradient(90deg,#e7f0e4_0_6px,transparent_6px_10px)]" style={boxStyle(bars.establishing)} /> : null}
+        {bars.growing ? <span className="absolute top-0 h-full bg-[#f3e0c8]" style={boxStyle(bars.growing)} /> : null}
+        {bars.bloom ? <span className="absolute top-0 h-full rounded-r-sm bg-[#e7b7c6]" style={boxStyle(bars.bloom)} /> : null}
+        {bars.lift ? <span className="absolute top-0 h-full bg-[#c45b86]" style={boxStyle(bars.lift)} /> : null}
+        <span className="pointer-events-none absolute inset-0 flex items-center truncate px-1 text-[11px] font-medium text-[#2c2622]">
+          {planting.flowerName}
+          {planting.variety ? ` · ${planting.variety}` : ""}
+        </span>
       </span>
     </div>
   );
+}
+
+function weekTicks(season: number): { left: number; label: string }[] {
+  const ticks: { left: number; label: string }[] = [];
+  const start = Date.UTC(season, 0, 1);
+  const days = Math.round((Date.UTC(season + 1, 0, 1) - start) / 86_400_000);
+  for (let offset = 0; offset < days; offset += 14) {
+    const date = new Date(start + offset * 86_400_000);
+    ticks.push({ left: (offset / days) * 100, label: String(date.getUTCDate()) });
+  }
+  return ticks;
+}
+
+function bedUnderPointer(grid: HTMLElement | null, x: number, y: number): string | null {
+  const stack = document.elementsFromPoint(x, y);
+  for (const node of stack) {
+    if (!(node instanceof Element)) continue;
+    const row = node.closest<HTMLElement>("[data-bed-id]");
+    if (row?.dataset.bedId) return row.dataset.bedId;
+  }
+  if (!grid) return null;
+  for (const row of grid.querySelectorAll<HTMLElement>("[data-bed-id]")) {
+    const rect = row.getBoundingClientRect();
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return row.dataset.bedId ?? null;
+  }
+  return null;
 }
 
 function boxStyle(box: { left: number; width: number }) {

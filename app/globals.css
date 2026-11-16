@@ -149,6 +149,15 @@
   border: 0;
 }
 
+.wordmark {
+  font-family: var(--font-wordmark), "Iowan Old Style", Palatino, serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 2.15rem;
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+
 .planting-ghost {
   position: fixed;
   z-index: 80;
