@@ -34,5 +34,7 @@ export function toPlantingDates(row: PlantingRecord, flowers: Flower[]): Plantin
     spacingCm: row.spacing_cm ?? undefined,
     bedLengthM: row.bed_length_m ?? undefined,
     notes: row.notes ?? "",
+    successionGroup: row.succession_group ?? null,
+    successionIndex: row.succession_index ?? null,
   };
 }

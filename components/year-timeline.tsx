@@ -4,11 +4,12 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PlantingDialog } from "@/components/planting-dialog";
 import { PlantingDragSurface } from "@/components/planting-drag";
-import { addPlanting, assignPlantingBeds, shiftPlanting } from "@/lib/actions";
+import { addPlanting, assignMany, assignPlantingBeds, shiftPlanting } from "@/lib/actions";
 import { diffDays, formatDateShort } from "@/lib/dates";
 import type { Flower } from "@/lib/flower";
 import { assignedBeds, bedsEmptyInMonth, bedWeekUtilisation, consecutiveBeds, freeBedIds, longestOpenGap } from "@/lib/occupancy";
 import { frostMarker, shiftDates, yearBars, type FlowerWindow, type PlantingDates, type SowSuggestion } from "@/lib/schedule";
+import { placeSuccessionSeries } from "@/lib/succession";
 import type { SitePlan } from "@/lib/tasks";
 
 export function YearTimeline({
@@ -38,12 +39,19 @@ export function YearTimeline({
 }) {
   const router = useRouter();
   const gridRef = useRef<HTMLDivElement>(null);
-  const dragPaint = useRef<{ free: Set<string>; hover: string | null; frame: number; point: { x: number; y: number } | null } | null>(null);
+  const dragPaint = useRef<{
+    free: Set<string>;
+    hover: string | null;
+    frame: number;
+    point: { x: number; y: number } | null;
+    series: PlantingDates[] | null;
+  } | null>(null);
   const [closed, setClosed] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [dialog, setDialog] = useState<PlantingDates | null | "new">(null);
   const [rows, setRows] = useState(plantings);
+  const [hiddenSow, setHiddenSow] = useState<string[]>([]);
   const propsKey = plantings.map((item) => `${item.id}:${assignedBeds(item).join(".")}:${item.fieldDate}`).join("|");
   const propsKeyRef = useRef(propsKey);
   if (propsKeyRef.current !== propsKey) {
@@ -67,7 +75,12 @@ export function YearTimeline({
   );
   const quick = gap ? quickCrops.filter((crop) => crop.days <= gap.days && crop.days >= 21).sort((a, b) => a.days - b.days)[0] : null;
   const gapBed = beds.find((bed) => bed.id === gap?.bedId);
-  const unassigned = useMemo(() => rows.filter((item) => assignedBeds(item).length === 0), [rows]);
+  const unassigned = useMemo(
+    () => rows.filter((item) => assignedBeds(item).length < (item.bedsNeeded ?? 1)),
+    [rows],
+  );
+  const trayGroups = useMemo(() => groupTray(unassigned), [unassigned]);
+  const visibleSuggestions = suggestions.filter((item) => !hiddenSow.includes(item.flower.slug));
 
   const applyClasses = useCallback((free: Set<string> | null, hover: string | null) => {
     const root = gridRef.current;
@@ -78,6 +91,7 @@ export function YearTimeline({
       row.classList.toggle("bed-free", isFree);
       row.classList.toggle("bed-busy", Boolean(free) && !isFree);
       row.classList.toggle("bed-hover", hover === id && isFree);
+      row.classList.remove("bed-preview");
     });
   }, []);
 
@@ -87,16 +101,27 @@ export function YearTimeline({
     [rows, suggestions],
   );
 
+  const seriesFor = useCallback(
+    (id: string) => {
+      if (!id.startsWith("group:")) return null;
+      return rows
+        .filter((item) => item.successionGroup === id.slice(6) && assignedBeds(item).length < (item.bedsNeeded ?? 1))
+        .sort((a, b) => (a.successionIndex ?? 0) - (b.successionIndex ?? 0));
+    },
+    [rows],
+  );
+
   const beginDrag = useCallback(
     (id: string) => {
-      const planting = plantingFor(id);
+      const series = seriesFor(id);
+      const planting = series?.[0] ?? plantingFor(id);
       if (!planting) return;
       const end = planting.liftDate && planting.liftDate > planting.bloomEnd ? planting.liftDate : planting.bloomEnd;
-      const free = new Set(freeBedIds(rows, bedIds, planting.fieldDate, end, id.startsWith("sow:") ? undefined : id));
-      dragPaint.current = { free, hover: null, frame: 0, point: null };
+      const free = new Set(freeBedIds(rows, bedIds, planting.fieldDate, end, planting.id.startsWith("sow:") ? undefined : planting.id));
+      dragPaint.current = { free, hover: null, frame: 0, point: null, series };
       applyClasses(free, null);
     },
-    [applyClasses, bedIds, plantingFor, rows],
+    [applyClasses, bedIds, plantingFor, rows, seriesFor],
   );
 
   const hoverDrag = useCallback(
@@ -111,14 +136,24 @@ export function YearTimeline({
         current.frame = 0;
         const at = current.point;
         if (!at) return;
-        const hit = document.elementFromPoint(at.x, at.y)?.closest<HTMLElement>("[data-bed-id]");
-        const next = hit?.dataset.bedId ?? null;
+        const next = bedUnderPointer(gridRef.current, at.x, at.y);
         if (next === current.hover) return;
         current.hover = next;
         applyClasses(current.free, next);
+        if (current.series && next) {
+          const plan = placeSuccessionSeries({
+            series: current.series,
+            startBedId: next,
+            blockBedIds: bedsInGroup(beds, next).map((bed) => bed.id),
+            plantings: rows,
+          });
+          for (const placement of plan.placed) {
+            gridRef.current?.querySelector(`[data-bed-id="${placement.bedId}"]`)?.classList.add("bed-preview");
+          }
+        }
       });
     },
-    [applyClasses],
+    [applyClasses, beds, rows],
   );
 
   const endDrag = useCallback(() => {
@@ -147,39 +182,43 @@ export function YearTimeline({
     window.setTimeout(() => setToast((current) => (current === text ? null : current)), 5000);
   }
 
-  async function dropOn(id: string, point: { x: number; y: number }) {
+  async function dropOn(id: string, point: { x: number; y: number }, mode: "add" | "move" = "add") {
+    if (id.startsWith("group:")) {
+      await dropGroup(id.slice(6), point);
+      return;
+    }
     const planting = plantingFor(id);
     if (!planting) return;
     const end = planting.liftDate && planting.liftDate > planting.bloomEnd ? planting.liftDate : planting.bloomEnd;
-    const allowed = new Set(freeBedIds(rows, bedIds, planting.fieldDate, end, planting.id.startsWith("sow:") ? undefined : planting.id));
+    const ignore = planting.id.startsWith("sow:") ? undefined : planting.id;
+    const allowed = new Set(freeBedIds(rows, bedIds, planting.fieldDate, end, ignore));
     const bedId = bedUnderPointer(gridRef.current, point.x, point.y);
     if (!bedId || !allowed.has(bedId)) {
       showError(bedId ? "That bed is taken for the whole time this planting is in the ground." : "Drop it on a free bed. The dates stay as they are.");
       return;
     }
-    const ordered = bedsInGroup(beds, bedId).map((bed) => bed.id);
-    const run = consecutiveBeds(ordered, bedId, planting.bedsNeeded ?? 1, [...allowed]);
-    if (!run) {
-      showError(`This one needs ${planting.bedsNeeded ?? 1} beds in a row, and the neighbours are not free.`);
+    const have = assignedBeds(planting);
+    const capacity = planting.bedsNeeded ?? 1;
+    if (mode === "add" && !id.startsWith("sow:") && have.length >= capacity) {
+      showError("That planting is already on all its beds.");
       return;
     }
+    const ordered = bedsInGroup(beds, bedId).map((item) => item.id);
+    const remaining = mode === "move" ? capacity : Math.max(1, capacity - have.length);
+    const extra = consecutiveBeds(ordered, bedId, remaining, [...allowed]) ?? (allowed.has(bedId) ? [bedId] : null);
+    if (!extra) {
+      showError("That bed is not free for this planting.");
+      return;
+    }
+    const run = mode === "move" ? extra.slice(0, capacity) : [...have, ...extra.filter((item) => !have.includes(item))].slice(0, capacity);
     gridRef.current?.setAttribute("data-save", "");
     const started = performance.now();
     const suggestion = id.startsWith("sow:") ? suggestions.find((item) => item.flower.slug === id.slice(4)) : null;
     const previous = rows;
     const optimisticId = suggestion ? `pending-${suggestion.flower.slug}` : id;
-    const placed: PlantingDates = suggestion
-      ? {
-          ...planting,
-          id: optimisticId,
-          bedId: run[0] ?? null,
-          bedIds: run,
-        }
-      : { ...planting, bedId: run[0] ?? null, bedIds: run };
-    setRows((current) => {
-      const without = current.filter((item) => item.id !== id && item.id !== optimisticId);
-      return [...without, placed];
-    });
+    const placed: PlantingDates = { ...planting, id: optimisticId, bedId: run[0] ?? null, bedIds: run };
+    setRows((current) => [...current.filter((item) => item.id !== id && item.id !== optimisticId), placed]);
+    if (suggestion) setHiddenSow((current) => [...current, suggestion.flower.slug]);
     requestAnimationFrame(() => {
       gridRef.current?.setAttribute("data-settled-ms", String(Math.round(performance.now() - started)));
     });
@@ -196,12 +235,13 @@ export function YearTimeline({
           firstBloomYear: suggestion.window.firstBloomYear,
           spansYears: suggestion.window.spansYears,
           bedIds: run,
-          bedsNeeded: 1,
+          bedsNeeded: capacity,
           quiet: true,
         })
       : await assignPlantingBeds(farmId, id, run);
     if ("error" in result && result.error) {
       setRows(previous);
+      if (suggestion) setHiddenSow((current) => current.filter((slug) => slug !== suggestion.flower.slug));
       gridRef.current?.setAttribute("data-save", "error");
       showError(String(result.error));
       return;
@@ -209,12 +249,61 @@ export function YearTimeline({
     if (suggestion && "id" in result && result.id) {
       setRows((current) => current.map((item) => (item.id === optimisticId ? { ...item, id: result.id as string } : item)));
     }
+    const placedCount = run.length;
+    setMessage(placedCount < capacity ? `${placedCount} of ${capacity} beds placed. Drop it again for the rest.` : null);
     gridRef.current?.setAttribute("data-save", "ok");
-    setMessage(null);
+  }
+
+  async function dropGroup(groupId: string, point: { x: number; y: number }) {
+    const series = rows
+      .filter((item) => item.successionGroup === groupId && assignedBeds(item).length < (item.bedsNeeded ?? 1))
+      .sort((a, b) => (a.successionIndex ?? 0) - (b.successionIndex ?? 0));
+    const bedId = bedUnderPointer(gridRef.current, point.x, point.y);
+    if (!series.length || !bedId) {
+      showError("Drop the succession on a free bed.");
+      return;
+    }
+    const plan = placeSuccessionSeries({
+      series,
+      startBedId: bedId,
+      blockBedIds: bedsInGroup(beds, bedId).map((bed) => bed.id),
+      plantings: rows,
+    });
+    if (!plan.placed.length) {
+      showError("That bed is not free for the first sowing.");
+      return;
+    }
+    const previous = rows;
+    setRows((current) =>
+      current.map((item) => {
+        const placement = plan.placed.find((placed) => placed.id === item.id);
+        return placement ? { ...item, bedId: placement.bedId, bedIds: [placement.bedId] } : item;
+      }),
+    );
+    gridRef.current?.setAttribute("data-save", "");
+    const result = await assignMany(
+      farmId,
+      plan.placed.map((placement) => ({ plantingId: placement.id, bedIds: [placement.bedId] })),
+    );
+    if ("error" in result && result.error) {
+      setRows(previous);
+      gridRef.current?.setAttribute("data-save", "error");
+      showError(String(result.error));
+      return;
+    }
+    const names = new Map(beds.map((bed) => [bed.id, labelFor(bed)]));
+    const placedText = plan.placed.map((placement) => {
+      const sowing = series.find((item) => item.id === placement.id);
+      return `${sowing?.flowerName ?? "Sowing"} ${sowing?.successionIndex ?? ""} on ${names.get(placement.bedId) ?? "a bed"}`;
+    });
+    const leftText = plan.left.length ? ` ${plan.left.length} still in the tray.` : "";
+    setMessage(`${placedText.join(". ")}.${leftText}`);
+    setToast(`${placedText.join(". ")}.${leftText}`);
+    gridRef.current?.setAttribute("data-save", "ok");
   }
 
   function movePlanting(id: string, point: { x: number; y: number }) {
-    void dropOn(id, point);
+    void dropOn(id, point, "move");
   }
 
   return (
@@ -275,7 +364,7 @@ export function YearTimeline({
           <p className="font-heading text-xl">Unplanted</p>
           <p className="mt-1 text-xs text-muted-foreground">Create them here first. Drag onto a bed that is free for the whole spell. The bar keeps these dates.</p>
           <ul className="mt-3 space-y-2">
-            {suggestions.map((item) => (
+            {visibleSuggestions.map((item) => (
               <li key={item.flower.slug}>
                 <PlantingDragSurface
                   id={`sow:${item.flower.slug}`}
@@ -290,22 +379,55 @@ export function YearTimeline({
                 />
               </li>
             ))}
-            {unassigned.map((planting) => (
-              <li key={planting.id}>
-                <PlantingDragSurface
-                  id={planting.id}
-                  label={planting.flowerName}
-                  detail={`${planting.variety || "Garden mix"} · out ${formatDateShort(planting.fieldDate)} · ${planting.bedsNeeded ?? 1} bed`}
-                  testId={`unassigned-${planting.id}`}
-                  onDragStart={beginDrag}
-                  onDragEnd={endDrag}
-                  onMove={hoverDrag}
-                  onDrop={(id, point) => void dropOn(id, point)}
-                  onActivate={() => setDialog(planting)}
-                />
-              </li>
-            ))}
-            {unassigned.length === 0 && suggestions.length === 0 ? <li className="text-sm text-muted-foreground">Nothing waiting. Add a planting and it will sit here.</li> : null}
+            {trayGroups.map((group) =>
+              group.kind === "single" ? (
+                <li key={group.planting.id}>
+                  <PlantingDragSurface
+                    id={group.planting.id}
+                    label={group.planting.flowerName}
+                    detail={trayDetail(group.planting)}
+                    testId={`unassigned-${group.planting.id}`}
+                    onDragStart={beginDrag}
+                    onDragEnd={endDrag}
+                    onMove={hoverDrag}
+                    onDrop={(id, point) => void dropOn(id, point, "add")}
+                    onActivate={() => setDialog(group.planting)}
+                  />
+                </li>
+              ) : (
+                <li key={group.id} className="rounded-xl border border-border p-2" data-testid={`succession-${group.id}`}>
+                  <PlantingDragSurface
+                    id={`group:${group.id}`}
+                    label={`${group.plantings[0]?.flowerName ?? "Sowing"} ${group.plantings[0]?.variety ?? ""}`.trim()}
+                    detail={`${group.plantings.length} successions`}
+                    testId={`succession-drag-${group.id}`}
+                    onDragStart={beginDrag}
+                    onDragEnd={endDrag}
+                    onMove={hoverDrag}
+                    onDrop={(id, point) => void dropOn(id, point, "add")}
+                    onActivate={() => setDialog(group.plantings[0] ?? null)}
+                  />
+                  <ul className="mt-2 space-y-1">
+                    {group.plantings.map((planting) => (
+                      <li key={planting.id}>
+                        <PlantingDragSurface
+                          id={planting.id}
+                          label={`${planting.successionIndex ?? ""}. ${formatDateShort(planting.bloomStart)}`}
+                          detail={trayDetail(planting)}
+                          testId={`unassigned-${planting.id}`}
+                          onDragStart={beginDrag}
+                          onDragEnd={endDrag}
+                          onMove={hoverDrag}
+                          onDrop={(id, point) => void dropOn(id, point, "add")}
+                          onActivate={() => setDialog(planting)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ),
+            )}
+            {trayGroups.length === 0 && visibleSuggestions.length === 0 ? <li className="text-sm text-muted-foreground">Nothing waiting. Add a planting and it will sit here.</li> : null}
           </ul>
         </aside>
         <div ref={gridRef} className="max-h-[72vh] overflow-auto rounded-2xl border border-border bg-card" data-testid="bed-grid">
@@ -579,6 +701,34 @@ function groupBeds(beds: YearTimelineBeds): { id: string; label: string; beds: Y
   const list = [...groups.values()];
   if (singles.length) list.unshift({ id: "single", label: "Single beds", beds: singles });
   return list;
+}
+
+function trayDetail(planting: PlantingDates): string {
+  const placed = assignedBeds(planting).length;
+  const need = planting.bedsNeeded ?? 1;
+  const beds = need === 1 ? "1 bed" : `${placed} of ${need} beds placed`;
+  return `${planting.variety || "Garden mix"} · out ${formatDateShort(planting.fieldDate)} · ${beds}`;
+}
+
+function groupTray(plantings: PlantingDates[]): Array<{ kind: "single"; planting: PlantingDates } | { kind: "group"; id: string; plantings: PlantingDates[] }> {
+  const groups = new Map<string, PlantingDates[]>();
+  const singles: PlantingDates[] = [];
+  for (const planting of plantings) {
+    if (!planting.successionGroup) singles.push(planting);
+    else {
+      const list = groups.get(planting.successionGroup) ?? [];
+      list.push(planting);
+      groups.set(planting.successionGroup, list);
+    }
+  }
+  return [
+    ...[...groups.entries()].map(([id, list]) => ({
+      kind: "group" as const,
+      id,
+      plantings: list.sort((a, b) => (a.successionIndex ?? 0) - (b.successionIndex ?? 0)),
+    })),
+    ...singles.map((planting) => ({ kind: "single" as const, planting })),
+  ];
 }
 
 function plantingsByBed(plantings: PlantingDates[]): Map<string, PlantingDates[]> {

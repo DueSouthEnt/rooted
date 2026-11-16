@@ -101,6 +101,8 @@ export interface PlantingRecord {
   spacing_cm?: number | null;
   bed_length_m?: number | null;
   notes?: string | null;
+  succession_group?: string | null;
+  succession_index?: number | null;
   planting_beds?: { bed_id: string }[] | null;
 }
 

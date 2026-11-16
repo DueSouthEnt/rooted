@@ -8,6 +8,7 @@ import type { Flower } from "@/lib/flower";
 import { isRhsRating } from "@/lib/hardiness";
 import { packedSpanM, reflowBlock } from "@/lib/blocks";
 import { assignedBeds, freeBedIds, groundSpan } from "@/lib/occupancy";
+import { successionWindows } from "@/lib/succession";
 import { isPlantingMethod, shiftDates, tasksForPlanting, type PlantingDates, type PlantingMethod } from "@/lib/schedule";
 import type { BedRectangle, FarmBoundary, LngLat } from "@/lib/geo";
 import { destination, isBedRectangle, isFarmBoundary, toCentimetres } from "@/lib/geo";
@@ -615,6 +616,8 @@ function asDates(row: PlantingRecord, name: string, colour: string): PlantingDat
     spacingCm: row.spacing_cm ?? undefined,
     bedLengthM: row.bed_length_m ?? undefined,
     notes: row.notes ?? "",
+    successionGroup: row.succession_group ?? null,
+    successionIndex: row.succession_index ?? null,
   };
 }
 
@@ -765,6 +768,114 @@ export async function addPlanting(
     revalidateFarm(farmId);
   }
   return { id: data.id as string, bedIds: wanted };
+}
+
+export async function addSuccessionGroup(
+  farmId: string,
+  input: {
+    flowerSlug: string;
+    variety: string;
+    method: PlantingMethod;
+    nurseryStart: string | null;
+    fieldDate: string;
+    bloomStart: string;
+    bloomEnd: string;
+    liftDate: string | null;
+    firstBloomYear: number;
+    spansYears: boolean;
+    bedsNeeded?: number;
+    daysToMaturity?: number;
+    daysInNursery?: number;
+    bloomWeeks?: number;
+    spacingCm?: number;
+    bedLengthM?: number;
+    notes?: string;
+    count: number;
+    intervalDays: number;
+  },
+) {
+  const { supabase, flowers, farm } = await loadFarm(farmId);
+  const flower = flowers.find((item) => item.slug === input.flowerSlug);
+  if (!flower) return { error: "That flower isn't in the catalogue." };
+  if (flower.lifeCycle !== "annual") return { error: "Only annuals are sown in succession. This one stays put." };
+  const count = Math.max(1, Math.min(8, Math.round(input.count)));
+  const group = crypto.randomUUID();
+  const windows = successionWindows(
+    {
+      nurseryStart: input.nurseryStart,
+      fieldDate: input.fieldDate,
+      bloomStart: input.bloomStart,
+      bloomEnd: input.bloomEnd,
+      liftDate: input.liftDate,
+      firstBloomYear: input.firstBloomYear,
+    },
+    count,
+    input.intervalDays,
+  );
+  const rows = windows.map((window, index) => ({
+    farm_id: farmId,
+    flower_slug: flower.slug,
+    variety: input.variety || flower.varieties.split(",")[0]?.trim() || "",
+    method: input.method,
+    nursery_start: window.nurseryStart,
+    field_date: window.fieldDate,
+    bloom_start: window.bloomStart,
+    bloom_end: window.bloomEnd,
+    lift_date: window.liftDate,
+    first_bloom_year: window.firstBloomYear,
+    spans_years: input.spansYears,
+    beds_needed: input.bedsNeeded ?? 1,
+    days_to_maturity: input.daysToMaturity ?? null,
+    days_in_nursery: input.daysInNursery ?? null,
+    bloom_weeks: input.bloomWeeks ?? null,
+    spacing_cm: input.spacingCm ?? null,
+    bed_length_m: input.bedLengthM ?? null,
+    notes: input.notes ?? "",
+    season_year: farm.season_year,
+    succession_group: group,
+    succession_index: index + 1,
+  }));
+  const { error } = await supabase.from("plantings").insert(rows);
+  if (error) return { error: error.message };
+  const { data: already } = await supabase.from("farm_crops").select("id").eq("farm_id", farmId).eq("flower_slug", flower.slug).maybeSingle();
+  if (!already) {
+    await supabase.from("farm_crops").insert({
+      farm_id: farmId,
+      flower_slug: flower.slug,
+      status: "planting",
+      successions: count,
+    });
+  }
+  revalidateFarm(farmId);
+  return { ok: true as const, group, count };
+}
+
+export async function assignMany(farmId: string, placements: { plantingId: string; bedIds: string[] }[]) {
+  const { supabase, flowers, beds } = await loadFarm(farmId);
+  const rows = await loadPlantings(supabase, farmId);
+  const bySlug = new Map(flowers.map((flower) => [flower.slug, flower]));
+  for (const placement of placements) {
+    if (placement.bedIds.some((bedId) => !beds.some((bed) => bed.id === bedId))) return { error: "That bed isn't on this farm." };
+    const row = rows.find((item) => item.id === placement.plantingId);
+    if (!row) return { error: "One of those sowings has gone." };
+    const flower = bySlug.get(row.flower_slug);
+    const dated = rows.map((item) => asDates(item, flower?.commonName ?? item.flower_slug, flower?.colour ?? "#f7d5dc"));
+    const current = dated.find((item) => item.id === placement.plantingId);
+    if (!current) return { error: "One of those sowings has gone." };
+    const free = freeBedIds(dated, placement.bedIds, current.fieldDate, occupiedEnd(current), placement.plantingId);
+    if (placement.bedIds.some((bedId) => !free.includes(bedId))) {
+      return { error: "A later sowing no longer fits that bed. It is still in the tray." };
+    }
+    const placed = await writeBeds(supabase, placement.plantingId, row.flower_slug, assignedBeds(current), placement.bedIds, rows);
+    if (placed) return { error: placed };
+    const updated = rows.find((item) => item.id === placement.plantingId);
+    if (updated) {
+      updated.bed_id = placement.bedIds[0] ?? null;
+      updated.planting_beds = placement.bedIds.map((bedId) => ({ bed_id: bedId }));
+    }
+  }
+  finishPlantingQuietly(farmId);
+  return { ok: true as const };
 }
 
 export async function assignPlantingBeds(farmId: string, plantingId: string, bedIds: string[]) {

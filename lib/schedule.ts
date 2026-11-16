@@ -41,6 +41,8 @@ export interface PlantingDates {
   spacingCm?: number;
   bedLengthM?: number;
   notes?: string;
+  successionGroup?: string | null;
+  successionIndex?: number | null;
 }
 
 export interface SowSuggestion {

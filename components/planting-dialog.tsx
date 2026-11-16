@@ -3,10 +3,11 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { addPlanting, updatePlanting } from "@/lib/actions";
-import { diffDays } from "@/lib/dates";
+import { addPlanting, addSuccessionGroup, updatePlanting } from "@/lib/actions";
+import { diffDays, formatDateShort } from "@/lib/dates";
 import type { Flower } from "@/lib/flower";
 import { composeFlowerDates, type SowStyle } from "@/lib/planting-dates";
+import { cutAndComeAgain, successionDefaults, successionEligible, successionWindows } from "@/lib/succession";
 import { scheduleFlower, type PlantingDates, type PlantingMethod } from "@/lib/schedule";
 import type { SitePlan } from "@/lib/tasks";
 
@@ -84,6 +85,8 @@ function PlantingForm({
   const [bedLengthM, setBedLengthM] = useState(editing?.bedLengthM ?? 4);
   const [spacingCm, setSpacingCm] = useState(editing?.spacingCm ?? initial?.spacingCm ?? 25);
   const [notes, setNotes] = useState(editing?.notes ?? "");
+  const [successions, setSuccessions] = useState(1);
+  const [intervalWeeks, setIntervalWeeks] = useState(3);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -120,6 +123,9 @@ function PlantingForm({
     setBloomWeeks(next.bloomWeeks);
     setSpacingCm(next.spacingCm);
     setVariety(scheduled?.variety ?? next.varieties.split(",")[0]?.trim() ?? "");
+    const defaults = successionDefaults(next);
+    setSuccessions(defaults.count);
+    setIntervalWeeks(defaults.intervalDays / 7);
     setFieldLock(null);
     setBloomLock(null);
     setEndLock(null);
@@ -156,7 +162,9 @@ function PlantingForm({
     };
     const result = editing
       ? await updatePlanting(farmId, editing.id, payload)
-      : await addPlanting(farmId, { flowerSlug: flower.slug, ...payload });
+      : successions > 1 && successionEligible(flower.lifeCycle)
+        ? await addSuccessionGroup(farmId, { flowerSlug: flower.slug, ...payload, count: successions, intervalDays: intervalWeeks * 7 })
+        : await addPlanting(farmId, { flowerSlug: flower.slug, ...payload });
     setBusy(false);
     if ("error" in result && typeof result.error === "string") {
       setError(result.error);
@@ -196,7 +204,7 @@ function PlantingForm({
       {flower ? (
         <label className="text-sm">
           Variety
-          <input value={variety} onChange={(event) => setVariety(event.target.value)} list="varieties" className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-3" />
+          <input data-testid="planting-variety" value={variety} onChange={(event) => setVariety(event.target.value)} list="varieties" className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-3" />
           <datalist id="varieties">
             {varieties.map((item) => (
               <option key={item} value={item} />
@@ -267,6 +275,39 @@ function PlantingForm({
         </label>
       </div>
       <p className="text-xs text-muted-foreground">About {along} plants along each {bedLengthM} m bed, at {spacingCm} cm. {bedsNeeded} bed{bedsNeeded === 1 ? "" : "s"}.</p>
+      {flower && successionEligible(flower.lifeCycle) && !editing ? (
+        <fieldset className="grid gap-2 rounded-xl border border-border p-3 text-sm" data-testid="succession-fields">
+          <legend className="px-1">Succession sow</legend>
+          {cutAndComeAgain(flower) ? (
+            <p className="text-xs text-muted-foreground">This one flowers again if you keep cutting. Extra sowings are only for a second flush.</p>
+          ) : null}
+          <div className="grid grid-cols-2 gap-3">
+            <label>
+              Sowings
+              <input data-testid="succession-count" type="number" min={1} max={8} value={successions} onChange={(event) => setSuccessions(Number(event.target.value))} className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-3" />
+            </label>
+            <label>
+              Weeks apart
+              <input data-testid="succession-weeks" type="number" min={1} max={12} value={intervalWeeks} onChange={(event) => setIntervalWeeks(Number(event.target.value))} className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-3" />
+            </label>
+          </div>
+          {successions > 1 ? (
+            <ul className="text-xs text-muted-foreground" data-testid="succession-preview">
+              {successionWindows(
+                { nurseryStart: dates.nurseryStart, fieldDate: dates.fieldDate, bloomStart: dates.bloomStart, bloomEnd: dates.bloomEnd, liftDate: null, firstBloomYear: Number(dates.bloomStart.slice(0, 4)) },
+                successions,
+                intervalWeeks * 7,
+              ).map((window, index) => (
+                <li key={window.bloomStart}>
+                  {index + 1}. In flower {formatDateShort(window.bloomStart)} – {formatDateShort(window.bloomEnd)}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </fieldset>
+      ) : flower && !editing ? (
+        <p className="text-xs text-muted-foreground">Perennials, bulbs and tubers are planted once. No succession sow.</p>
+      ) : null}
       <label className="text-sm">
         Notes
         <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2" />
