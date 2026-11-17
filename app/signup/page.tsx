@@ -4,16 +4,17 @@ import Link from "next/link";
 import { useActionState } from "react";
 import { APP_NAME } from "@/lib/brand";
 import { signUp } from "@/lib/actions";
-import { BloomMark } from "@/components/floral";
+import { FloralBanner } from "@/components/floral-banner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 export default function SignupPage() {
   const [state, action, pending] = useActionState(signUp, {});
   return (
-    <main className="mx-auto flex min-h-full max-w-md flex-col justify-center px-5 py-12">
-      <BloomMark bloom="sweetpea" className="h-16 w-24" />
-      <Link href="/" className="font-heading mt-2 text-3xl">
+    <div className="min-h-full">
+      <FloralBanner />
+      <main className="mx-auto flex max-w-md flex-col justify-center px-5 py-12">
+      <Link href="/" className="font-heading text-3xl">
         {APP_NAME}
       </Link>
       <h1 className="mt-6 font-heading text-4xl">Start a farm plan.</h1>
@@ -43,6 +44,7 @@ export default function SignupPage() {
           Log in
         </Link>
       </p>
-    </main>
+      </main>
+    </div>
   );
 }

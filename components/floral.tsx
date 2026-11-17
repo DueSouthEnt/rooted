@@ -63,25 +63,20 @@ export function BloomMark({ bloom, className = "h-14 w-20" }: { bloom: Bloom; cl
 }
 
 export function PageHeader({
-  bloom,
   kicker,
   title,
   lede,
 }: {
-  bloom: Bloom;
+  bloom?: Bloom;
   kicker?: string;
   title: string;
   lede?: string;
 }) {
   return (
-    <header className="relative overflow-hidden rounded-2xl border border-border bg-card/80 px-5 py-4">
-      <div className="pointer-events-none absolute top-1 right-2 opacity-80">
-        <BloomMark bloom={bloom} />
-      </div>
+    <header className="rounded-2xl border border-border bg-card/80 px-5 py-4">
       {kicker ? <p className="text-xs tracking-[0.16em] text-muted-foreground uppercase">{kicker}</p> : null}
-      <h1 className="font-heading relative max-w-xl text-4xl tracking-tight">{title}</h1>
-      {lede ? <p className="relative mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">{lede}</p> : null}
-      <div className="mt-3 h-px w-24 bg-gradient-to-r from-[#f7d5dc] to-transparent" />
+      <h1 className="font-heading max-w-xl text-4xl tracking-tight">{title}</h1>
+      {lede ? <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">{lede}</p> : null}
     </header>
   );
 }

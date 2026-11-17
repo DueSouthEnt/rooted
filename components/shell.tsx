@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { FloralBanner } from "@/components/floral-banner";
 import { APP_NAME } from "@/lib/brand";
 import { signOut, updateUnits } from "@/lib/actions";
 import type { Units } from "@/lib/units";
@@ -105,7 +106,8 @@ export function Shell({
           </div>
         </div>
       </header>
-      <div className={`mx-auto grid gap-6 px-4 py-6 md:grid-cols-[200px_1fr] ${wide ? "max-w-[1500px]" : "max-w-6xl"}`}>
+      <FloralBanner />
+      <div className={`mx-auto grid gap-6 px-4 pt-5 pb-6 md:grid-cols-[200px_1fr] ${wide ? "max-w-[1500px]" : "max-w-6xl"}`}>
         <nav className="hidden flex-col gap-4 md:flex">
           {groups.map((group) =>
             group.links.length === 0 ? null : (

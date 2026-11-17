@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { assignFlower, saveBedBlock, saveFarmBoundary, saveMappedBed, unassignFlower, updateMappedBed } from "@/lib/actions";
 import { plantCount } from "@/lib/beds";
 import { bedIndexLabels, previewBlock, type BlockDraft } from "@/lib/blocks";
-import { BloomMark } from "@/components/floral";
 import { BlockPanel } from "@/components/block-panel";
 import type { Flower } from "@/lib/flower";
 import {
@@ -419,14 +418,11 @@ export function FarmMap({
   return (
     <div className="space-y-3" onPointerUp={onPointerUp}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div className="flex items-start gap-2">
-          <BloomMark bloom="cosmos" className="h-12 w-16 shrink-0" />
-          <div>
-            <h1 className="font-heading text-4xl">Farm map</h1>
-            <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-              Satellite pictures, then your outline, then a single bed or a whole block of them. Sizes are measured on the ground.
-            </p>
-          </div>
+        <div>
+          <h1 className="font-heading text-4xl">Farm map</h1>
+          <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+            Satellite pictures, then your outline, then a single bed or a whole block of them. Sizes are measured on the ground.
+          </p>
         </div>
         <form onSubmit={searchPlace} className="flex gap-2">
           <input

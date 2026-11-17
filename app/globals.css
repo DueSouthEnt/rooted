@@ -158,6 +158,21 @@
   letter-spacing: 0.01em;
 }
 
+.floral-banner {
+  display: flex;
+  height: 4.5rem;
+  width: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+@media (min-width: 768px) {
+  .floral-banner {
+    height: 7.25rem;
+  }
+}
+
 .planting-ghost {
   position: fixed;
   z-index: 80;
