@@ -128,6 +128,8 @@ npx supabase db push --remote
 
 `supabase/migrations/20261116160000_successions.sql` adds `succession_group` and `succession_index` so successive sowings of an annual stay linked. Run `npx supabase db push --remote` again. No new secret.
 
+`supabase/migrations/20261117120000_task_planting.sql` adds `tasks.planting_id`, with a cascade so deleting a planting removes its jobs. Bed links already cascade from `planting_beds`. Existing delete policies on plantings, planting beds and tasks already allow the owner to remove their own rows. Run the push again. No new secret.
+
 Satellite pictures come from Esri World Imagery, which does not need a key. Attribution is on the map. If you later want a different tile service, set an optional public variable and restart the app:
 
 ```bash

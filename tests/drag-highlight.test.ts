@@ -169,7 +169,10 @@ describe.skipIf(!chrome || !live)("year plan drag highlight", () => {
     await page.waitForSelector("[data-testid='planting-flower-search']");
     await page.type("[data-testid='planting-flower-search']", "Cornflower");
     await page.waitForFunction(() => [...document.querySelectorAll("[data-testid='planting-dialog'] button")].some((node) => node.textContent?.trim().startsWith("Cornflower")));
-    await page.evaluate(() => [...document.querySelectorAll("[data-testid='planting-dialog'] button")].find((node) => node.textContent?.trim().startsWith("Cornflower"))?.click());
+    await page.evaluate(() => {
+      const button = [...document.querySelectorAll("[data-testid='planting-dialog'] button")].find((node) => node.textContent?.trim().startsWith("Cornflower"));
+      if (button instanceof HTMLElement) button.click();
+    });
     await page.waitForSelector("[data-testid='succession-count']");
     await page.$eval("[data-testid='succession-count']", (element) => {
       const input = element as HTMLInputElement;
@@ -240,7 +243,10 @@ describe.skipIf(!chrome || !live)("year plan drag highlight", () => {
     await page.click("[data-testid='open-planting-dialog']");
     await page.type("[data-testid='planting-flower-search']", "Cosmos");
     await page.waitForFunction(() => [...document.querySelectorAll("[data-testid='planting-dialog'] button")].some((node) => node.textContent?.trim().startsWith("Cosmos")));
-    await page.evaluate(() => [...document.querySelectorAll("[data-testid='planting-dialog'] button")].find((node) => node.textContent?.trim().startsWith("Cosmos"))?.click());
+    await page.evaluate(() => {
+      const button = [...document.querySelectorAll("[data-testid='planting-dialog'] button")].find((node) => node.textContent?.trim().startsWith("Cosmos"));
+      if (button instanceof HTMLElement) button.click();
+    });
     await page.waitForSelector("[data-testid='succession-count']");
     await page.$eval("[data-testid='succession-count']", (element) => {
       const input = element as HTMLInputElement;
@@ -274,6 +280,64 @@ describe.skipIf(!chrome || !live)("year plan drag highlight", () => {
     await page.screenshot({ path: "/opt/cursor/artifacts/rooted-v9-gantt.png" });
     const onChart = await page.$$eval("[data-testid^='gantt-bar-']", (bars) => bars.filter((bar) => /Cosmos/i.test(bar.textContent ?? "")).length);
     expect(onChart).toBeGreaterThan(0);
+    await browser.close();
+  }, 60_000);
+
+  it("opens a planting from its bar, deletes it, and can put another back in the tray", async () => {
+    const puppeteer = await import("puppeteer-core");
+    const browser = await puppeteer.default.launch({
+      executablePath: chrome,
+      headless: true,
+      args: ["--no-sandbox", "--disable-dev-shm-usage"],
+    });
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1440, height: 1100 });
+    await page.goto(`${base}/login`, { waitUntil: "networkidle0" });
+    await page.type('input[name="email"]', "rowan.1794762634221@example.com");
+    await page.type('input[name="password"]', "flower-bed-2026");
+    await Promise.all([page.waitForNavigation({ waitUntil: "networkidle0" }), page.click("button[type=submit]")]);
+    await page.goto(`${base}/app/farms/cb0b0301-5cac-45f1-9621-07c49dbb575f/timeline`, { waitUntil: "networkidle0" });
+    const bar = await page.$("[data-testid^='gantt-bar-']");
+    const picked = await page.$eval("[data-testid^='gantt-bar-']", (node) => ({
+      id: (node.getAttribute("data-testid") ?? "").replace("gantt-bar-", ""),
+      label: (node.textContent ?? "").trim(),
+    }));
+    if (!bar || !picked.id) throw new Error("No planting bar");
+    await page.$eval(`[data-testid='gantt-bar-${picked.id}']`, (element) => element.scrollIntoView({ block: "center" }));
+    await page.click(`[data-testid='gantt-bar-${picked.id}']`);
+    await page.waitForSelector("[data-testid='planting-dialog']");
+    const flower = await page.$eval("[data-testid='planting-flower-search']", (node) => (node as HTMLInputElement).value);
+    const variety = await page.$eval("[data-testid='planting-variety']", (node) => (node as HTMLInputElement).value);
+    const shown = `${flower}${variety ? ` · ${variety}` : ""}`;
+    expect(picked.label).toContain(flower);
+    expect(shown.replace(/\s+/g, " ")).toBe(picked.label.replace(/\s+/g, " "));
+    const dates = await page.$eval("[data-testid='planting-dates']", (node) => node.textContent ?? "");
+    expect(dates).toMatch(/In the bed from \d{4}-\d{2}-\d{2}/);
+    await page.screenshot({ path: "/opt/cursor/artifacts/rooted-v10-dialog.png" });
+    await page.click("[data-testid='delete-planting']");
+    await page.waitForSelector("[data-testid='delete-confirm']");
+    await page.$eval("[data-testid='delete-confirm']", (element) => element.scrollIntoView({ block: "center" }));
+    await page.screenshot({ path: "/opt/cursor/artifacts/rooted-v10-delete.png" });
+    const confirm = await page.$("[data-testid='confirm-delete']");
+    if (confirm) await confirm.click();
+    else await page.click("[data-testid='delete-this-sowing']");
+    await page.waitForFunction((id) => !document.querySelector(`[data-testid='gantt-bar-${id}']`) && !document.querySelector("[data-testid='planting-dialog']"), { timeout: 15000 }, picked.id);
+    await page.reload({ waitUntil: "networkidle0" });
+    expect(await page.$(`[data-testid='gantt-bar-${picked.id}']`)).toBeNull();
+
+    const next = await page.$eval("[data-testid^='gantt-bar-']", (node) => (node.getAttribute("data-testid") ?? "").replace("gantt-bar-", ""));
+    await page.$eval(`[data-testid='gantt-bar-${next}']`, (element) => element.scrollIntoView({ block: "center" }));
+    await page.click(`[data-testid='gantt-bar-${next}']`);
+    await page.waitForSelector("[data-testid='remove-from-bed']");
+    await page.click("[data-testid='remove-from-bed']");
+    await page.waitForFunction(
+      (id) => Boolean(document.querySelector(`[data-testid='unassigned-${id}']`)) && !document.querySelector(`[data-testid='gantt-bar-${id}']`),
+      { timeout: 15000 },
+      next,
+    );
+    await page.reload({ waitUntil: "networkidle0" });
+    expect(await page.$(`[data-testid='unassigned-${next}']`)).toBeTruthy();
+    expect(await page.$(`[data-testid='gantt-bar-${next}']`)).toBeNull();
     await browser.close();
   }, 60_000);
 });

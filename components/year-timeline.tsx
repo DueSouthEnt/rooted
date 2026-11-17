@@ -494,6 +494,13 @@ export function YearTimeline({
         site={site}
         season={season}
         editing={dialog && dialog !== "new" ? dialog : null}
+        successionCount={
+          dialog && dialog !== "new" && dialog.successionGroup
+            ? rows.filter((item) => item.successionGroup === dialog.successionGroup).length
+            : 1
+        }
+        onDeleted={(ids) => setRows((current) => current.filter((item) => !ids.includes(item.id)))}
+        onUnplaced={(id) => setRows((current) => current.map((item) => (item.id === id ? { ...item, bedId: null, bedIds: [] } : item)))}
       />
     </div>
   );
@@ -598,7 +605,7 @@ function Bar({
 }) {
   const bars = yearBars(planting, season);
   const slide = useRef<HTMLSpanElement>(null);
-  const origin = useRef<{ x: number; y: number; width: number } | null>(null);
+  const origin = useRef<{ x: number; y: number; width: number; dragging: boolean } | null>(null);
   const preview = useRef(0);
   return (
     <div
@@ -606,13 +613,18 @@ function Bar({
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         event.currentTarget.setPointerCapture(event.pointerId);
-        origin.current = { x: event.clientX, y: event.clientY, width: event.currentTarget.getBoundingClientRect().width };
+        origin.current = { x: event.clientX, y: event.clientY, width: event.currentTarget.getBoundingClientRect().width, dragging: false };
         preview.current = 0;
-        onDragStart(planting.id);
       }}
       onPointerMove={(event) => {
         const started = origin.current;
         if (!started || !slide.current) return;
+        const distance = Math.hypot(event.clientX - started.x, event.clientY - started.y);
+        if (!started.dragging && distance < 8) return;
+        if (!started.dragging) {
+          started.dragging = true;
+          onDragStart(planting.id);
+        }
         const days = Math.round(((event.clientX - started.x) / started.width) * 365);
         preview.current = days;
         slide.current.style.transform = `translateX(${(days / 365) * 100}%)`;
@@ -624,16 +636,19 @@ function Bar({
         origin.current = null;
         preview.current = 0;
         if (slide.current) slide.current.style.transform = "";
-        const bedId = bedUnderPointer(null, event.clientX, event.clientY);
-        const staying = assignedBeds(planting);
         onDragEnd();
         if (!started) return;
+        if (!started.dragging) {
+          onEdit(planting);
+          return;
+        }
+        const bedId = bedUnderPointer(null, event.clientX, event.clientY);
+        const staying = assignedBeds(planting);
         if (bedId && !staying.includes(bedId)) {
           onMove(planting.id, { x: event.clientX, y: event.clientY });
           return;
         }
         if (Math.abs(moved) >= 1) onShift(planting.id, moved);
-        else onEdit(planting);
       }}
       onPointerCancel={() => {
         origin.current = null;

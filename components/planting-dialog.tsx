@@ -3,8 +3,9 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { addPlanting, addSuccessionGroup, updatePlanting } from "@/lib/actions";
+import { addPlanting, addSuccessionGroup, clearPlantingBed, deletePlanting, deleteSuccessionGroup, updatePlanting } from "@/lib/actions";
 import { diffDays, formatDateShort } from "@/lib/dates";
+import { assignedBeds } from "@/lib/occupancy";
 import type { Flower } from "@/lib/flower";
 import { composeFlowerDates, type SowStyle } from "@/lib/planting-dates";
 import { cutAndComeAgain, successionDefaults, successionEligible, successionWindows } from "@/lib/succession";
@@ -19,6 +20,9 @@ export function PlantingDialog({
   site,
   season,
   editing,
+  successionCount = 1,
+  onDeleted,
+  onUnplaced,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -27,6 +31,9 @@ export function PlantingDialog({
   site: SitePlan | null;
   season: number;
   editing?: PlantingDates | null;
+  successionCount?: number;
+  onDeleted?: (ids: string[]) => void;
+  onUnplaced?: (id: string) => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -45,6 +52,9 @@ export function PlantingDialog({
             site={site}
             season={season}
             editing={editing ?? null}
+            successionCount={successionCount}
+            onDeleted={onDeleted}
+            onUnplaced={onUnplaced}
             onDone={() => onOpenChange(false)}
           />
         ) : null}
@@ -59,6 +69,9 @@ function PlantingForm({
   site,
   season,
   editing,
+  successionCount,
+  onDeleted,
+  onUnplaced,
   onDone,
 }: {
   farmId: string;
@@ -66,21 +79,24 @@ function PlantingForm({
   site: SitePlan | null;
   season: number;
   editing: PlantingDates | null;
+  successionCount: number;
+  onDeleted?: (ids: string[]) => void;
+  onUnplaced?: (id: string) => void;
   onDone: () => void;
 }) {
   const router = useRouter();
   const initial = flowers.find((flower) => flower.slug === editing?.flowerSlug) ?? null;
-  const [query, setQuery] = useState(editing ? `${editing.flowerName} ${editing.variety}` : "");
+  const [query, setQuery] = useState(editing?.flowerName ?? "");
   const [flower, setFlower] = useState<Flower | null>(initial);
   const [variety, setVariety] = useState(editing?.variety ?? "");
   const [style, setStyle] = useState<SowStyle>(editing?.method === "indoor" ? "indoor" : "direct");
   const [sowDate, setSowDate] = useState(editing?.nurseryStart ?? editing?.fieldDate ?? site?.lastSpringFrost ?? `${season}-03-01`);
-  const [daysInNursery, setDaysInNursery] = useState(editing?.daysInNursery ?? 28);
-  const [fieldLock, setFieldLock] = useState<string | null>(null);
-  const [daysToMaturity, setDaysToMaturity] = useState(editing?.daysToMaturity ?? initial?.daysFromPlantToBloom ?? 60);
-  const [bloomLock, setBloomLock] = useState<string | null>(null);
-  const [bloomWeeks, setBloomWeeks] = useState(editing?.bloomWeeks ?? initial?.bloomWeeks ?? 8);
-  const [endLock, setEndLock] = useState<string | null>(null);
+  const [daysInNursery, setDaysInNursery] = useState(editing?.daysInNursery ?? (editing?.nurseryStart ? diffDays(editing.nurseryStart, editing.fieldDate) : 28));
+  const [fieldLock, setFieldLock] = useState<string | null>(editing?.fieldDate ?? null);
+  const [daysToMaturity, setDaysToMaturity] = useState(editing?.daysToMaturity ?? (editing ? diffDays(editing.fieldDate, editing.bloomStart) : initial?.daysFromPlantToBloom ?? 60));
+  const [bloomLock, setBloomLock] = useState<string | null>(editing?.bloomStart ?? null);
+  const [bloomWeeks, setBloomWeeks] = useState(editing?.bloomWeeks ?? (editing ? Math.max(1, Math.round((diffDays(editing.bloomStart, editing.bloomEnd) + 1) / 7)) : initial?.bloomWeeks ?? 8));
+  const [endLock, setEndLock] = useState<string | null>(editing?.bloomEnd ?? null);
   const [bedsNeeded, setBedsNeeded] = useState(editing?.bedsNeeded ?? 1);
   const [bedLengthM, setBedLengthM] = useState(editing?.bedLengthM ?? 4);
   const [spacingCm, setSpacingCm] = useState(editing?.spacingCm ?? initial?.spacingCm ?? 25);
@@ -88,7 +104,11 @@ function PlantingForm({
   const [successions, setSuccessions] = useState(1);
   const [intervalWeeks, setIntervalWeeks] = useState(3);
   const [error, setError] = useState("");
+  const [clash, setClash] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
+  const placed = editing ? assignedBeds(editing).length : 0;
+  const plantingName = [editing?.flowerName, editing?.variety].filter(Boolean).join(" ") || "this planting";
 
   const matches = flowers
     .filter((item) => `${item.commonName} ${item.latinName} ${item.varieties}`.toLowerCase().includes(query.trim().toLowerCase()))
@@ -131,7 +151,21 @@ function PlantingForm({
     setEndLock(null);
   }
 
-  async function save() {
+  function rememberOldDates() {
+    if (!editing) return;
+    setSowDate(editing.nurseryStart ?? editing.fieldDate);
+    setDaysInNursery(editing.daysInNursery ?? (editing.nurseryStart ? diffDays(editing.nurseryStart, editing.fieldDate) : 0));
+    setDaysToMaturity(editing.daysToMaturity ?? diffDays(editing.fieldDate, editing.bloomStart));
+    setBloomWeeks(editing.bloomWeeks ?? Math.max(1, Math.round((diffDays(editing.bloomStart, editing.bloomEnd) + 1) / 7)));
+    setFieldLock(editing.fieldDate);
+    setBloomLock(editing.bloomStart);
+    setEndLock(editing.bloomEnd);
+    setStyle(editing.method === "indoor" ? "indoor" : "direct");
+    setClash(false);
+    setError("Kept the dates already on the bed. Change anything else, then save.");
+  }
+
+  async function save(unplace = false) {
     if (!flower) {
       setError("Choose a flower first.");
       return;
@@ -141,7 +175,10 @@ function PlantingForm({
     const base = site ? scheduleFlower(flower, site) : null;
     const delta = base ? diffDays(base.fieldDate, dates.fieldDate) : 0;
     const liftDate = base?.liftDate ? addDaysSafe(base.liftDate, delta) : editing?.liftDate ?? null;
-    const method = storedMethod(flower, style);
+    const method =
+      editing && flower.slug === editing.flowerSlug && (style === "indoor") === (editing.method === "indoor")
+        ? editing.method
+        : storedMethod(flower, style);
     const payload = {
       variety,
       method,
@@ -150,8 +187,13 @@ function PlantingForm({
       bloomStart: dates.bloomStart,
       bloomEnd: dates.bloomEnd,
       liftDate,
-      firstBloomYear: flower.yearsToEstablish > 1 ? season + flower.yearsToEstablish - 1 : Number(dates.bloomStart.slice(0, 4)),
-      spansYears: flower.lifeCycle !== "annual" && flower.lifeCycle !== "biennial",
+      firstBloomYear:
+        editing && flower.slug === editing.flowerSlug
+          ? editing.firstBloomYear
+          : flower.yearsToEstablish > 1
+            ? season + flower.yearsToEstablish - 1
+            : Number(dates.bloomStart.slice(0, 4)),
+      spansYears: editing && flower.slug === editing.flowerSlug ? editing.spansYears : flower.lifeCycle !== "annual" && flower.lifeCycle !== "biennial",
       bedsNeeded,
       daysToMaturity,
       daysInNursery: style === "indoor" ? daysInNursery : 0,
@@ -161,15 +203,53 @@ function PlantingForm({
       notes,
     };
     const result = editing
-      ? await updatePlanting(farmId, editing.id, payload)
+      ? await updatePlanting(farmId, editing.id, { ...payload, unplace })
       : successions > 1 && successionEligible(flower.lifeCycle)
         ? await addSuccessionGroup(farmId, { flowerSlug: flower.slug, ...payload, count: successions, intervalDays: intervalWeeks * 7 })
         : await addPlanting(farmId, { flowerSlug: flower.slug, ...payload });
+    setBusy(false);
+    if ("clash" in result && result.clash) {
+      setClash(true);
+      return;
+    }
+    if ("error" in result && typeof result.error === "string") {
+      setError(result.error);
+      return;
+    }
+    if (unplace && editing) onUnplaced?.(editing.id);
+    onDone();
+    router.refresh();
+  }
+
+  async function unplace() {
+    if (!editing) return;
+    setBusy(true);
+    setError("");
+    const result = await clearPlantingBed(farmId, editing.id);
     setBusy(false);
     if ("error" in result && typeof result.error === "string") {
       setError(result.error);
       return;
     }
+    onUnplaced?.(editing.id);
+    onDone();
+    router.refresh();
+  }
+
+  async function remove(scope: "one" | "group") {
+    if (!editing) return;
+    setBusy(true);
+    setError("");
+    const result =
+      scope === "group" && editing.successionGroup
+        ? await deleteSuccessionGroup(farmId, editing.successionGroup)
+        : await deletePlanting(farmId, editing.id);
+    setBusy(false);
+    if ("error" in result && typeof result.error === "string") {
+      setError(result.error);
+      return;
+    }
+    if ("ids" in result) onDeleted?.(result.ids);
     onDone();
     router.refresh();
   }
@@ -226,7 +306,7 @@ function PlantingForm({
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-sm">
           {style === "indoor" ? "Sow under cover" : "Sow or plant"}
-          <input type="date" value={sowDate} onChange={(event) => { setSowDate(event.target.value); setFieldLock(null); setBloomLock(null); setEndLock(null); }} className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-3" />
+          <input data-testid="planting-sow" type="date" value={sowDate} onChange={(event) => { setSowDate(event.target.value); setFieldLock(null); setBloomLock(null); setEndLock(null); setClash(false); }} className="mt-1 h-11 w-full rounded-lg border border-input bg-background px-3" />
         </label>
         <label className="text-sm">
           Weeks in the nursery
@@ -305,17 +385,70 @@ function PlantingForm({
             </ul>
           ) : null}
         </fieldset>
+      ) : editing?.successionGroup ? (
+        <p className="text-sm text-muted-foreground" data-testid="succession-info">
+          Succession sowing {editing.successionIndex ?? 1}
+          {successionCount > 1 ? ` of ${successionCount}` : ""}. Drag the group to place them together, or this one on its own.
+        </p>
       ) : flower && !editing ? (
         <p className="text-xs text-muted-foreground">Perennials, bulbs and tubers are planted once. No succession sow.</p>
       ) : null}
       <label className="text-sm">
         Notes
-        <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2" />
+        <textarea data-testid="planting-notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2" />
       </label>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      <button type="button" disabled={busy} onClick={() => void save()} className="h-11 rounded-full bg-primary px-4 text-sm text-primary-foreground" data-testid="save-planting">
+      {clash ? (
+        <div className="grid gap-2 rounded-xl border border-border bg-secondary/50 p-3 text-sm" data-testid="date-clash">
+          <p>Those dates overlap another planting on this bed.</p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="h-9 rounded-full border border-border bg-background px-3 text-sm" onClick={rememberOldDates} data-testid="keep-old-dates">
+              Keep the old dates
+            </button>
+            <button type="button" disabled={busy} className="h-9 rounded-full bg-primary px-3 text-sm text-primary-foreground" onClick={() => void save(true)} data-testid="unplace-on-clash">
+              Move it back to the tray
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {error ? <p className="text-sm text-destructive" data-testid="planting-error">{error}</p> : null}
+      <button type="button" disabled={busy} onClick={() => void save(false)} className="h-11 rounded-full bg-primary px-4 text-sm text-primary-foreground" data-testid="save-planting">
         {busy ? "Saving…" : editing ? "Save changes" : "Add to unplanted"}
       </button>
+      {editing && placed > 0 ? (
+        <button type="button" disabled={busy} onClick={() => void unplace()} className="h-11 rounded-full border border-border bg-background px-4 text-sm" data-testid="remove-from-bed">
+          Remove from bed
+        </button>
+      ) : null}
+      {editing ? (
+        confirmDelete ? (
+          <div className="grid gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm" data-testid="delete-confirm">
+            <p>Delete {plantingName}? This removes it from all beds.</p>
+            <div className="flex flex-wrap gap-2">
+              {editing.successionGroup ? (
+                <>
+                  <button type="button" disabled={busy} className="h-9 rounded-full bg-destructive px-3 text-sm text-white" onClick={() => void remove("one")} data-testid="delete-this-sowing">
+                    Delete this sowing
+                  </button>
+                  <button type="button" disabled={busy} className="h-9 rounded-full bg-destructive px-3 text-sm text-white" onClick={() => void remove("group")} data-testid="delete-all-successions">
+                    Delete all successions
+                  </button>
+                </>
+              ) : (
+                <button type="button" disabled={busy} className="h-9 rounded-full bg-destructive px-3 text-sm text-white" onClick={() => void remove("one")} data-testid="confirm-delete">
+                  Delete {plantingName}
+                </button>
+              )}
+              <button type="button" className="h-9 rounded-full border border-border bg-background px-3 text-sm" onClick={() => setConfirmDelete(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" disabled={busy} onClick={() => setConfirmDelete(true)} className="h-11 rounded-full bg-destructive/10 px-4 text-sm text-destructive" data-testid="delete-planting">
+            Delete planting
+          </button>
+        )
+      ) : null}
     </div>
   );
 }

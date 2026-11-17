@@ -244,8 +244,14 @@ async function refreshTasks(farmId: string) {
       due_date: task.dueDate,
       category: task.category,
       completed_at: done.get(task.taskKey) ?? null,
+      planting_id: plantingIdFromKey(task.taskKey),
     })),
   );
+}
+
+function plantingIdFromKey(taskKey: string): string | null {
+  const [kind, id] = taskKey.split(":");
+  return kind === "planting" && id ? id : null;
 }
 
 export async function saveCrops(farmId: string, slugs: string[], mode: "add" | "remove") {
@@ -970,6 +976,7 @@ export async function updatePlanting(
     spacingCm?: number;
     bedLengthM?: number;
     notes?: string;
+    unplace?: boolean;
   },
 ) {
   const { supabase, flowers } = await loadFarm(farmId);
@@ -981,14 +988,14 @@ export async function updatePlanting(
   const current = dated.find((item) => item.id === plantingId)!;
   const next = { ...current, ...input, bedId: current.bedId, bedIds: current.bedIds };
   const held = assignedBeds(current);
-  if (held.length) {
+  if (held.length && !input.unplace) {
     const end = occupiedEnd(next);
     const free = freeBedIds(dated, held, next.fieldDate, end, plantingId);
     if (held.some((bedId) => !free.includes(bedId))) {
-      return { error: "Those dates clash with something already in that bed. Shorten the bloom, or take it off the bed first." };
+      return { clash: true as const };
     }
   }
-  await supabase
+  const updated = await supabase
     .from("plantings")
     .update({
       variety: input.variety,
@@ -1010,29 +1017,61 @@ export async function updatePlanting(
     })
     .eq("id", plantingId)
     .eq("farm_id", farmId);
+  if (updated.error) return { error: updated.error.message };
+  if (input.unplace && held.length) {
+    const cleared = await writeBeds(supabase, plantingId, row.flower_slug, held, [], rows);
+    if (cleared) return { error: cleared };
+  }
   await refreshTasks(farmId);
   revalidateFarm(farmId);
-  return { ok: true as const };
+  return { ok: true as const, unplaced: Boolean(input.unplace && held.length) };
+}
+
+async function forgetPlanting(
+  supabase: Awaited<ReturnType<typeof loadFarm>>["supabase"],
+  farmId: string,
+  row: PlantingRecord,
+  rows: PlantingRecord[],
+  gone: Set<string>,
+) {
+  await supabase.from("tasks").delete().eq("farm_id", farmId).like("task_key", `planting:${row.id}:%`);
+  const previous = row.planting_beds?.map((item) => item.bed_id) ?? (row.bed_id ? [row.bed_id] : []);
+  for (const bedId of previous) {
+    const still = rows.some(
+      (item) =>
+        !gone.has(item.id) &&
+        item.flower_slug === row.flower_slug &&
+        (item.bed_id === bedId || item.planting_beds?.some((link) => link.bed_id === bedId)),
+    );
+    if (!still) await supabase.from("bed_plants").delete().eq("bed_id", bedId).eq("flower_slug", row.flower_slug);
+  }
 }
 
 export async function deletePlanting(farmId: string, plantingId: string) {
   const { supabase } = await loadFarm(farmId);
   const rows = await loadPlantings(supabase, farmId);
   const row = rows.find((item) => item.id === plantingId);
-  await supabase.from("plantings").delete().eq("id", plantingId).eq("farm_id", farmId);
-  const previous = row?.planting_beds?.map((item) => item.bed_id) ?? (row?.bed_id ? [row.bed_id] : []);
-  for (const bedId of previous) {
-    const still = rows.some(
-      (item) =>
-        item.id !== plantingId &&
-        item.flower_slug === row?.flower_slug &&
-        (item.bed_id === bedId || item.planting_beds?.some((link) => link.bed_id === bedId)),
-    );
-    if (!still && row) await supabase.from("bed_plants").delete().eq("bed_id", bedId).eq("flower_slug", row.flower_slug);
-  }
+  if (!row) return { error: "That planting has gone." };
+  const removed = await supabase.from("plantings").delete().eq("id", plantingId).eq("farm_id", farmId);
+  if (removed.error) return { error: removed.error.message };
+  await forgetPlanting(supabase, farmId, row, rows, new Set([plantingId]));
   await refreshTasks(farmId);
   revalidateFarm(farmId);
-  return { ok: true as const };
+  return { ok: true as const, ids: [plantingId] };
+}
+
+export async function deleteSuccessionGroup(farmId: string, groupId: string) {
+  const { supabase } = await loadFarm(farmId);
+  const rows = await loadPlantings(supabase, farmId);
+  const members = rows.filter((item) => item.succession_group === groupId);
+  if (!members.length) return { error: "Those sowings have gone." };
+  const removed = await supabase.from("plantings").delete().eq("farm_id", farmId).eq("succession_group", groupId);
+  if (removed.error) return { error: removed.error.message };
+  const gone = new Set(members.map((item) => item.id));
+  for (const row of members) await forgetPlanting(supabase, farmId, row, rows, gone);
+  await refreshTasks(farmId);
+  revalidateFarm(farmId);
+  return { ok: true as const, ids: members.map((item) => item.id) };
 }
 
 export async function listFarms() {

@@ -65,6 +65,11 @@ export function PlantsBoard({
         site={site}
         season={season}
         editing={dialog && dialog !== "new" ? dialog : null}
+        successionCount={
+          dialog && dialog !== "new" && dialog.successionGroup
+            ? plantings.filter((item) => item.successionGroup === dialog.successionGroup).length
+            : 1
+        }
       />
     </div>
   );
