@@ -138,7 +138,13 @@ NEXT_PUBLIC_SATELLITE_TILE_URL=https://example.com/tiles/{z}/{y}/{x}
 
 The `{z}`, `{y}` and `{x}` placeholders are required. Leave it unset to keep Esri.
 
-Deploy the Next.js app anywhere that runs Node (a small VPS, or a host that supports `next start`). Set the same two `NEXT_PUBLIC_SUPABASE_*` variables there. `npm run build` then `npm start` listens on port 43123.
+Deploy the Next.js app anywhere that runs Node (a small VPS, or a host that supports `next start`). Set the same two `NEXT_PUBLIC_SUPABASE_*` variables there. `npm run build` then `npm start` serves that production build. `npm run dev` is the only script that binds host `0.0.0.0` and port `43123`.
+
+## Deploying to Vercel
+
+1. In Vercel, import this GitHub repository.
+2. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` as environment variables. Use the hosted project URL and the anon (publishable) key. Do not set the service role key.
+3. After Vercel assigns a URL, open the Supabase project and go to Authentication > URL Configuration. Set that Vercel URL as the Site URL, and add it to the redirect URLs, including `https://<your-vercel-host>/auth/callback`.
 
 ## What the app does
 
