@@ -7,6 +7,7 @@ import { isRhsRating } from "@/lib/hardiness";
 import type { BedRectangle, FarmBoundary, LngLat } from "@/lib/geo";
 import type { SitePlan } from "@/lib/tasks";
 import { createClient } from "@/lib/supabase/server";
+import { normalizeSections, type Section } from "@/lib/sections";
 
 export interface FarmRecord {
   id: string;
@@ -127,12 +128,18 @@ export async function requireUser() {
 
 export async function loadProfile() {
   const { supabase, user } = await requireUser();
-  const { data } = await supabase.from("profiles").select("display_name, units").eq("id", user.id).maybeSingle();
+  const { data } = await supabase
+    .from("profiles")
+    .select("display_name, units, enabled_sections")
+    .eq("id", user.id)
+    .maybeSingle();
+  const enabledSections = normalizeSections(data?.enabled_sections);
   return {
     supabase,
     user,
     displayName: data?.display_name || user.email?.split("@")[0] || "there",
     units: data?.units === "imperial" ? "imperial" : "metric",
+    enabledSections: (enabledSections.length ? enabledSections : ["flowers"]) as Section[],
   } as const;
 }
 

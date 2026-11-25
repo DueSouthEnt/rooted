@@ -19,7 +19,7 @@ export default async function WeekPage({ params }: { params: Promise<{ farmId: s
       <div className="space-y-4">
         <PageHeader bloom="dahlia" kicker="Overview" title="This week" lede="The calendar needs frost dates before it will date a single job." />
         <EmptyFlourish title="No frost dates yet" text="Set the place, then the Monday list can start." />
-        <Link href={`/app/farms/${farmId}/place`} className="underline">
+        <Link href={`/flowers/farms/${farmId}/place`} className="underline">
           Set the place
         </Link>
       </div>
@@ -53,7 +53,7 @@ export default async function WeekPage({ params }: { params: Promise<{ farmId: s
       {loaded.crops.length === 0 ? (
         <p className="text-sm">
           Add flowers and we'll write the list.{" "}
-          <Link className="underline" href={`/app/farms/${farmId}/flowers`}>
+          <Link className="underline" href={`/flowers/farms/${farmId}/flowers`}>
             Choose some
           </Link>
           .

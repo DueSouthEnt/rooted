@@ -36,7 +36,7 @@ await Promise.all([
 await shot("03-after-signup");
 
 if (!page.url().includes("/farms/new")) {
-  await page.goto(`${base}/app/farms/new`, { waitUntil: "networkidle0" });
+  await page.goto(`${base}/flowers/farms/new`, { waitUntil: "networkidle0" });
 }
 await page.waitForFunction(() => [...document.querySelectorAll("button")].some((item) => item.textContent?.trim() === "Edinburgh"));
 await page.evaluate(() => {

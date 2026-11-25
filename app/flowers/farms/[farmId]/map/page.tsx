@@ -11,7 +11,7 @@ export default async function FarmMapPage({ params }: { params: Promise<{ farmId
       <div className="space-y-3">
         <PageHeader bloom="cosmos" kicker="Overview" title="Farm map" lede="The satellite view needs a pin. Set the place first, then come back and draw the land." />
         <EmptyFlourish title="No pin yet" text="A postcode or a point on the map is enough to centre the picture." />
-        <Link href={`/app/farms/${farm.id}/place`} className="underline">
+        <Link href={`/flowers/farms/${farm.id}/place`} className="underline">
           Set the place
         </Link>
       </div>

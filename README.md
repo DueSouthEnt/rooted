@@ -1,6 +1,8 @@
-# Rooted
+# Seed to Harvest
 
-Rooted is a cut-flower planning app for small plots, allotments, and little farms. You give it a place. It estimates frost dates and hardiness, ranks flowers for that season, lays beds out from plant spacing, and writes a week-by-week job list.
+Seed to Harvest is a growing-year planner for small plots, allotments, and little farms. Flowers are the part you can use today. Vegetables are the next section. The name lives in `APP_NAME` in `lib/brand.ts`.
+
+You give it a place. It estimates frost dates and hardiness, ranks flowers for that season, lays beds out from plant spacing, and writes a week-by-week job list.
 
 Most of the defaults assume the UK and Europe: metric units, Monday weeks, British English, RHS hardiness next to USDA zones, and the habit of sowing hardy annuals in autumn. It still works for a garden in Oregon or Tasmania.
 
@@ -139,6 +141,12 @@ NEXT_PUBLIC_SATELLITE_TILE_URL=https://example.com/tiles/{z}/{y}/{x}
 The `{z}`, `{y}` and `{x}` placeholders are required. Leave it unset to keep Esri.
 
 Deploy the Next.js app anywhere that runs Node (a small VPS, or a host that supports `next start`). Set the same two `NEXT_PUBLIC_SUPABASE_*` variables there. `npm run build` then `npm start` serves that production build. `npm run dev` is the only script that binds host `0.0.0.0` and port `43123`.
+
+## Accounts
+
+Sign-up asks for flowers, vegetables, or both, and stores that on `profiles.enabled_sections`. A person has to confirm their email before they can get in. The check-inbox page is `/signup/confirm`, and the link returns to `/auth/callback`.
+
+On the hosted project, turn on Authentication > Providers > Email > Confirm email. Under Authentication > URL Configuration, set the Site URL to the real app URL and add `https://<your-host>/auth/callback` to the redirect URLs (and the same for `http://127.0.0.1:43123` while you are on a laptop). Apply the sections migration with `npx supabase link --project-ref your-project-ref` and then `npx supabase db push`.
 
 ## Deploying to Vercel
 

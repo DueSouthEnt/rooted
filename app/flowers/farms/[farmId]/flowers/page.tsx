@@ -17,7 +17,7 @@ export default async function FlowersPage({ params }: { params: Promise<{ farmId
       <div className="space-y-3">
         <PageHeader bloom="poppy" kicker="Growing" title="Crop library" lede="Set a place first. Recommendations without a frost date are just a wishlist." />
         <EmptyFlourish title="No place on this farm" text="A postcode is enough to rank what is worth sowing." />
-        <Link href={`/app/farms/${farm.id}/place`} className="underline">
+        <Link href={`/flowers/farms/${farm.id}/place`} className="underline">
           Add the place
         </Link>
       </div>

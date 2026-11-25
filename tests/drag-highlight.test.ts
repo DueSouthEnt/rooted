@@ -27,7 +27,7 @@ describe.skipIf(!chrome || !live)("year plan drag highlight", () => {
     await page.type('input[name="email"]', "rowan.1794762634221@example.com");
     await page.type('input[name="password"]', "flower-bed-2026");
     await Promise.all([page.waitForNavigation({ waitUntil: "networkidle0" }), page.click("button[type=submit]")]);
-    await page.goto(`${base}/app/farms/cb0b0301-5cac-45f1-9621-07c49dbb575f/timeline`, { waitUntil: "networkidle0" });
+    await page.goto(`${base}/flowers/farms/cb0b0301-5cac-45f1-9621-07c49dbb575f/timeline`, { waitUntil: "networkidle0" });
     await page.waitForSelector("[data-testid='sow-sweet-pea']");
     await page.waitForFunction(() => document.querySelectorAll("[data-renders]").length > 5);
     const before = await page.$$eval("[data-renders]", (rows) => rows.map((row) => row.getAttribute("data-renders")));
@@ -78,7 +78,7 @@ describe.skipIf(!chrome || !live)("year plan drag highlight", () => {
     await page.type('input[name="email"]', "rowan.1794762634221@example.com");
     await page.type('input[name="password"]', "flower-bed-2026");
     await Promise.all([page.waitForNavigation({ waitUntil: "networkidle0" }), page.click("button[type=submit]")]);
-    await page.goto(`${base}/app/farms/cb0b0301-5cac-45f1-9621-07c49dbb575f/timeline`, { waitUntil: "networkidle0" });
+    await page.goto(`${base}/flowers/farms/cb0b0301-5cac-45f1-9621-07c49dbb575f/timeline`, { waitUntil: "networkidle0" });
     await page.waitForSelector("[data-testid='sow-sweet-pea']");
     await page.screenshot({ path: "/opt/cursor/artifacts/rooted-v7-header.png", clip: { x: 0, y: 0, width: 1440, height: 220 } });
 
@@ -164,7 +164,7 @@ describe.skipIf(!chrome || !live)("year plan drag highlight", () => {
     await page.type('input[name="email"]', "rowan.1794762634221@example.com");
     await page.type('input[name="password"]', "flower-bed-2026");
     await Promise.all([page.waitForNavigation({ waitUntil: "networkidle0" }), page.click("button[type=submit]")]);
-    await page.goto(`${base}/app/farms/cb0b0301-5cac-45f1-9621-07c49dbb575f/plants`, { waitUntil: "networkidle0" });
+    await page.goto(`${base}/flowers/farms/cb0b0301-5cac-45f1-9621-07c49dbb575f/plants`, { waitUntil: "networkidle0" });
     await page.click("[data-testid='open-planting-dialog']");
     await page.waitForSelector("[data-testid='planting-flower-search']");
     await page.type("[data-testid='planting-flower-search']", "Cornflower");
@@ -188,7 +188,7 @@ describe.skipIf(!chrome || !live)("year plan drag highlight", () => {
     });
     await page.click("[data-testid='save-planting']");
     await page.waitForFunction(() => !document.querySelector("[data-testid='planting-dialog']") && document.body.innerText.includes("Once"), { timeout: 15000 });
-    await page.goto(`${base}/app/farms/cb0b0301-5cac-45f1-9621-07c49dbb575f/timeline`, { waitUntil: "networkidle0" });
+    await page.goto(`${base}/flowers/farms/cb0b0301-5cac-45f1-9621-07c49dbb575f/timeline`, { waitUntil: "networkidle0" });
     const picked = await page.evaluate(() => {
       const card = [...document.querySelectorAll<HTMLElement>("[data-testid^='unassigned-']")].find((node) => {
         const label = node.querySelector("span")?.textContent?.trim() ?? "";
@@ -239,7 +239,7 @@ describe.skipIf(!chrome || !live)("year plan drag highlight", () => {
     await page.type('input[name="email"]', "rowan.1794762634221@example.com");
     await page.type('input[name="password"]', "flower-bed-2026");
     await Promise.all([page.waitForNavigation({ waitUntil: "networkidle0" }), page.click("button[type=submit]")]);
-    await page.goto(`${base}/app/farms/cb0b0301-5cac-45f1-9621-07c49dbb575f/plants`, { waitUntil: "networkidle0" });
+    await page.goto(`${base}/flowers/farms/cb0b0301-5cac-45f1-9621-07c49dbb575f/plants`, { waitUntil: "networkidle0" });
     await page.click("[data-testid='open-planting-dialog']");
     await page.type("[data-testid='planting-flower-search']", "Cosmos");
     await page.waitForFunction(() => [...document.querySelectorAll("[data-testid='planting-dialog'] button")].some((node) => node.textContent?.trim().startsWith("Cosmos")));
@@ -258,7 +258,7 @@ describe.skipIf(!chrome || !live)("year plan drag highlight", () => {
     await page.screenshot({ path: "/opt/cursor/artifacts/rooted-v9-dialog.png" });
     await page.click("[data-testid='save-planting']");
     await page.waitForFunction(() => /Cosmos/.test(document.body.innerText) && !document.querySelector("[data-testid='succession-preview']"), { timeout: 15000 });
-    await page.goto(`${base}/app/farms/cb0b0301-5cac-45f1-9621-07c49dbb575f/timeline`, { waitUntil: "networkidle0" });
+    await page.goto(`${base}/flowers/farms/cb0b0301-5cac-45f1-9621-07c49dbb575f/timeline`, { waitUntil: "networkidle0" });
     await page.waitForSelector("[data-testid^='succession-drag-']");
     await page.screenshot({ path: "/opt/cursor/artifacts/rooted-v9-tray.png" });
     const card = await page.$("[data-testid^='succession-drag-']");
@@ -296,7 +296,7 @@ describe.skipIf(!chrome || !live)("year plan drag highlight", () => {
     await page.type('input[name="email"]', "rowan.1794762634221@example.com");
     await page.type('input[name="password"]', "flower-bed-2026");
     await Promise.all([page.waitForNavigation({ waitUntil: "networkidle0" }), page.click("button[type=submit]")]);
-    await page.goto(`${base}/app/farms/cb0b0301-5cac-45f1-9621-07c49dbb575f/timeline`, { waitUntil: "networkidle0" });
+    await page.goto(`${base}/flowers/farms/cb0b0301-5cac-45f1-9621-07c49dbb575f/timeline`, { waitUntil: "networkidle0" });
     const bar = await page.$("[data-testid^='gantt-bar-']");
     const picked = await page.$eval("[data-testid^='gantt-bar-']", (node) => ({
       id: (node.getAttribute("data-testid") ?? "").replace("gantt-bar-", ""),
