@@ -44,7 +44,7 @@ export function DashboardHome({
     (task) => task.category === "harvest" && task.due_date >= today && task.due_date <= addDays(today, 14),
   );
   const space = beds === 0 ? 0 : Math.round((plantedBeds / beds) * 100);
-  const plantingHref = farm ? `/app/farms/${farm.id}/flowers` : "/app/farms/new";
+  const plantingHref = farm ? `/flowers/farms/${farm.id}/flowers` : "/flowers/farms/new";
 
   return (
     <div className="space-y-5">
@@ -62,7 +62,7 @@ export function DashboardHome({
       </div>
 
       {farms.length > 1 && farm ? (
-        <form className="flex items-center gap-2 text-sm" action="/app">
+        <form className="flex items-center gap-2 text-sm" action="/flowers">
           <label htmlFor="farm">Farm</label>
           <select id="farm" name="farm" defaultValue={farm.id} className="h-11 rounded-full border border-input bg-card px-3">
             {farms.map((item) => (
@@ -93,7 +93,7 @@ export function DashboardHome({
             <section className="rounded-2xl border border-border bg-card p-4">
               <div className="flex items-center justify-between gap-3">
                 <h2 className="font-heading text-2xl">Today’s priorities</h2>
-                <Link href={`/app/farms/${farm.id}/week`} className="text-sm text-primary underline">
+                <Link href={`/flowers/farms/${farm.id}/week`} className="text-sm text-primary underline">
                   View all tasks
                 </Link>
               </div>
@@ -133,7 +133,7 @@ function WeatherCard({ farm, forecast }: { farm: FarmRecord | null; forecast: Fo
       <section className="rounded-2xl border border-border bg-secondary/50 p-5">
         <p className="text-xs tracking-[0.14em] text-muted-foreground uppercase">Weather</p>
         <p className="font-heading mt-1 text-2xl">Set a place to see the sky</p>
-        <Link href={`/app/farms/${farm.id}/place`} className="mt-2 inline-block text-sm underline">
+        <Link href={`/flowers/farms/${farm.id}/place`} className="mt-2 inline-block text-sm underline">
           Add a postcode or a pin
         </Link>
       </section>
@@ -231,7 +231,7 @@ function SeasonCard({ farm }: { farm: FarmRecord }) {
         {farm.usda_zone ? ` · USDA ${farm.usda_zone}` : ""}
         {farm.season_length_days ? ` · ${farm.season_length_days} days` : ""}
       </p>
-      <Link href={`/app/farms/${farm.id}/map`} className="mt-3 inline-block text-sm underline">
+      <Link href={`/flowers/farms/${farm.id}/map`} className="mt-3 inline-block text-sm underline">
         Open the farm map
       </Link>
     </section>

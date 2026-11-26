@@ -16,10 +16,12 @@ import { loadFarm, loadPlantings, loadProfile, requireUser, type FarmRecord, typ
 import { farmToSite } from "@/lib/records";
 import { createClient } from "@/lib/supabase/server";
 import { generateTasks } from "@/lib/tasks";
+import { homeForSections, isSection, normalizeSections, safeNext, sectionsFromForm } from "@/lib/sections";
 
 export interface ActionState {
   error?: string;
   message?: string;
+  confirmEmail?: string;
 }
 
 function authError(message: string): string {
@@ -28,6 +30,7 @@ function authError(message: string): string {
   if (lower.includes("invalid") || lower.includes("credential")) {
     return "Email or password didn't match. Have another go.";
   }
+  if (lower.includes("confirm")) return "Confirm your email first. The link is in your inbox.";
   if (lower.includes("password")) return "Use at least 8 characters. A flower name is not a password.";
   if (lower.includes("fetch") || lower.includes("network") || lower.includes("failed")) {
     return "Can't reach Supabase. If this is your machine, run `npx supabase start` and check .env.local.";
@@ -46,32 +49,70 @@ export async function signUp(_prev: ActionState, formData: FormData): Promise<Ac
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const displayName = String(formData.get("displayName") ?? "").trim();
+  const sections = sectionsFromForm(formData.getAll("sections"));
   if (!email.includes("@")) return { error: "That doesn't look like an email address." };
   if (password.length < 8) return { error: "Use at least 8 characters. Slugs are persistent; passwords should be too." };
+  if (sections.length === 0) return { error: "Choose flowers, vegetables, or both." };
 
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
-      data: { display_name: displayName || email.split("@")[0] },
+      data: {
+        display_name: displayName || email.split("@")[0],
+        enabled_sections: sections,
+      },
       emailRedirectTo: `${await origin()}/auth/callback`,
     },
   });
   if (error) return { error: authError(error.message) };
   if (!data.session) {
-    return { message: "Check your email and confirm the account, then log in. Local Supabase usually skips this step." };
+    redirect(`/signup/confirm?email=${encodeURIComponent(email)}`);
   }
-  redirect("/app");
+  redirect(homeForSections(sections));
 }
 
 export async function signIn(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return { error: authError(error.message) };
-  redirect("/app");
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) {
+    const lower = error.message.toLowerCase();
+    if (lower.includes("confirm")) return { error: authError(error.message), confirmEmail: email };
+    return { error: authError(error.message) };
+  }
+  const { data: profile } = await supabase.from("profiles").select("enabled_sections").eq("id", data.user?.id ?? "").maybeSingle();
+  const sections = normalizeSections(profile?.enabled_sections);
+  const chosen = sections.length ? sections : (["flowers"] as const);
+  redirect(safeNext(String(formData.get("next") ?? ""), chosen));
+}
+
+export async function resendConfirmation(formData: FormData) {
+  const email = String(formData.get("email") ?? "").trim();
+  if (email.includes("@")) {
+    const supabase = await createClient();
+    await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: { emailRedirectTo: `${await origin()}/auth/callback` },
+    });
+  }
+  redirect(`/signup/confirm?email=${encodeURIComponent(email)}&sent=1`);
+}
+
+export async function enableSection(formData: FormData) {
+  const section = String(formData.get("section") ?? "");
+  if (!isSection(section)) return;
+  const { supabase, user, enabledSections } = await loadProfile();
+  if (!enabledSections.includes(section)) {
+    const next = normalizeSections([...enabledSections, section]);
+    await supabase.from("profiles").update({ enabled_sections: next }).eq("id", user.id);
+  }
+  revalidatePath("/settings");
+  revalidatePath("/flowers");
+  revalidatePath("/veg");
 }
 
 export async function signOut() {
@@ -155,7 +196,7 @@ export async function createFarm(_prev: ActionState, formData: FormData): Promis
     .select("id")
     .single();
   if (error || !data) return { error: "Couldn't save the farm. Is the database running?" };
-  redirect(`/app/farms/${data.id}`);
+  redirect(`/flowers/farms/${data.id}`);
 }
 
 export async function updateFarmClimate(farmId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -167,8 +208,8 @@ export async function updateFarmClimate(farmId: string, _prev: ActionState, form
   }
   const { error } = await supabase.from("farms").update({ ...climate, ...(name ? { name } : {}) }).eq("id", farmId);
   if (error) return { error: "Couldn't update the place." };
-  revalidatePath(`/app/farms/${farmId}`);
-  redirect(`/app/farms/${farmId}`);
+  revalidatePath(`/flowers/farms/${farmId}`);
+  redirect(`/flowers/farms/${farmId}`);
 }
 
 export async function updateSeasonYear(farmId: string, formData: FormData) {
@@ -176,7 +217,7 @@ export async function updateSeasonYear(farmId: string, formData: FormData) {
   const seasonYear = Number(formData.get("seasonYear"));
   if (!Number.isFinite(seasonYear) || seasonYear < 2000 || seasonYear > 2100) return;
   await supabase.from("farms").update({ season_year: seasonYear }).eq("id", farmId);
-  revalidatePath(`/app/farms/${farmId}`);
+  revalidatePath(`/flowers/farms/${farmId}`);
 }
 
 export async function updatePlanTop(farmId: string, formData: FormData) {
@@ -184,20 +225,20 @@ export async function updatePlanTop(farmId: string, formData: FormData) {
   const planTop = String(formData.get("planTop"));
   if (!["north", "east", "south", "west"].includes(planTop)) return;
   await supabase.from("farms").update({ plan_top: planTop }).eq("id", farmId);
-  revalidatePath(`/app/farms/${farmId}/beds`);
+  revalidatePath(`/flowers/farms/${farmId}/beds`);
 }
 
 export async function deleteFarm(farmId: string) {
   const { supabase } = await requireUser();
   await supabase.from("farms").delete().eq("id", farmId);
-  redirect("/app");
+  redirect("/flowers");
 }
 
 export async function updateUnits(formData: FormData) {
   const { supabase, user } = await requireUser();
   const units = formData.get("units") === "imperial" ? "imperial" : "metric";
   await supabase.from("profiles").update({ units }).eq("id", user.id);
-  revalidatePath("/app");
+  revalidatePath("/flowers");
 }
 
 async function refreshTasks(farmId: string) {
@@ -274,7 +315,7 @@ export async function saveCrops(farmId: string, slugs: string[], mode: "add" | "
     );
   }
   await refreshTasks(farmId);
-  revalidatePath(`/app/farms/${farmId}`);
+  revalidatePath(`/flowers/farms/${farmId}`);
 }
 
 function defaultStatus(flower: Flower | undefined): "planting" | "established" {
@@ -286,7 +327,7 @@ export async function setCropStatus(farmId: string, slug: string, status: "plant
   const { supabase } = await requireUser();
   await supabase.from("farm_crops").update({ status }).eq("farm_id", farmId).eq("flower_slug", slug);
   await refreshTasks(farmId);
-  revalidatePath(`/app/farms/${farmId}`);
+  revalidatePath(`/flowers/farms/${farmId}`);
 }
 
 export async function addBed(farmId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -309,8 +350,8 @@ export async function addBed(farmId: string, _prev: ActionState, formData: FormD
     position_y: (count ?? 0) * 2,
   });
   if (error) return { error: "Couldn't add that bed." };
-  revalidatePath(`/app/farms/${farmId}/beds`);
-  revalidatePath(`/app/farms/${farmId}/map`);
+  revalidatePath(`/flowers/farms/${farmId}/beds`);
+  revalidatePath(`/flowers/farms/${farmId}/map`);
   return { message: "Bed added." };
 }
 
@@ -321,7 +362,7 @@ export async function saveFarmBoundary(farmId: string, boundary: FarmBoundary | 
   }
   const { error } = await supabase.from("farms").update({ boundary }).eq("id", farmId);
   if (error) return { error: "Couldn't save the farm outline." };
-  revalidatePath(`/app/farms/${farmId}/map`);
+  revalidatePath(`/flowers/farms/${farmId}/map`);
   return { ok: true };
 }
 
@@ -352,8 +393,8 @@ export async function saveMappedBed(
     .select("id")
     .single();
   if (error || !data) return { error: "Couldn't save that bed." };
-  revalidatePath(`/app/farms/${farmId}/beds`);
-  revalidatePath(`/app/farms/${farmId}/map`);
+  revalidatePath(`/flowers/farms/${farmId}/beds`);
+  revalidatePath(`/flowers/farms/${farmId}/map`);
   return { id: data.id as string };
 }
 
@@ -371,30 +412,30 @@ export async function updateMappedBed(
     .eq("id", bedId)
     .eq("farm_id", farmId);
   if (error) return { error: "Couldn't update that bed." };
-  revalidatePath(`/app/farms/${farmId}/beds`);
-  revalidatePath(`/app/farms/${farmId}/map`);
+  revalidatePath(`/flowers/farms/${farmId}/beds`);
+  revalidatePath(`/flowers/farms/${farmId}/map`);
   return { ok: true };
 }
 
 export async function deleteBed(farmId: string, bedId: string) {
   const { supabase } = await requireUser();
   await supabase.from("beds").delete().eq("id", bedId).eq("farm_id", farmId);
-  revalidatePath(`/app/farms/${farmId}/beds`);
-  revalidatePath(`/app/farms/${farmId}/map`);
+  revalidatePath(`/flowers/farms/${farmId}/beds`);
+  revalidatePath(`/flowers/farms/${farmId}/map`);
 }
 
 export async function assignFlower(farmId: string, bedId: string, slug: string) {
   const { supabase } = await requireUser();
   await supabase.from("bed_plants").upsert({ bed_id: bedId, flower_slug: slug }, { onConflict: "bed_id,flower_slug" });
-  revalidatePath(`/app/farms/${farmId}/beds`);
-  revalidatePath(`/app/farms/${farmId}/map`);
+  revalidatePath(`/flowers/farms/${farmId}/beds`);
+  revalidatePath(`/flowers/farms/${farmId}/map`);
 }
 
 export async function unassignFlower(farmId: string, bedId: string, slug: string) {
   const { supabase } = await requireUser();
   await supabase.from("bed_plants").delete().eq("bed_id", bedId).eq("flower_slug", slug);
-  revalidatePath(`/app/farms/${farmId}/beds`);
-  revalidatePath(`/app/farms/${farmId}/map`);
+  revalidatePath(`/flowers/farms/${farmId}/beds`);
+  revalidatePath(`/flowers/farms/${farmId}/map`);
 }
 
 export async function saveBedBlock(
@@ -459,8 +500,8 @@ export async function saveBedBlock(
   });
   const { error: bedError } = await supabase.from("beds").insert(rows);
   if (bedError) return { error: "The block was saved, but the beds didn't land. Try it again." };
-  revalidatePath(`/app/farms/${farmId}/map`);
-  revalidatePath(`/app/farms/${farmId}/beds`);
+  revalidatePath(`/flowers/farms/${farmId}/map`);
+  revalidatePath(`/flowers/farms/${farmId}/beds`);
   return { id: block.id as string };
 }
 
@@ -542,16 +583,16 @@ export async function updateBedBlock(
       season_year: patch.seasonYear === undefined ? existing.season_year : patch.seasonYear,
     })
     .eq("id", blockId);
-  revalidatePath(`/app/farms/${farmId}/map`);
-  revalidatePath(`/app/farms/${farmId}/beds`);
+  revalidatePath(`/flowers/farms/${farmId}/map`);
+  revalidatePath(`/flowers/farms/${farmId}/beds`);
   return { ok: true };
 }
 
 export async function deleteBedBlock(farmId: string, blockId: string) {
   const { supabase } = await requireUser();
   await supabase.from("bed_blocks").delete().eq("id", blockId).eq("farm_id", farmId);
-  revalidatePath(`/app/farms/${farmId}/map`);
-  revalidatePath(`/app/farms/${farmId}/beds`);
+  revalidatePath(`/flowers/farms/${farmId}/map`);
+  revalidatePath(`/flowers/farms/${farmId}/beds`);
 }
 
 export async function duplicateBedBlock(farmId: string, blockId: string) {
@@ -581,7 +622,7 @@ export async function duplicateBedBlock(farmId: string, blockId: string) {
 export async function rebuildCalendar(farmId: string) {
   await requireUser();
   await refreshTasks(farmId);
-  revalidatePath(`/app/farms/${farmId}/week`);
+  revalidatePath(`/flowers/farms/${farmId}/week`);
 }
 
 export async function setTaskDone(farmId: string, taskId: string, done: boolean) {
@@ -591,7 +632,7 @@ export async function setTaskDone(farmId: string, taskId: string, done: boolean)
     .update({ completed_at: done ? new Date().toISOString() : null })
     .eq("id", taskId)
     .eq("farm_id", farmId);
-  revalidatePath(`/app/farms/${farmId}/week`);
+  revalidatePath(`/flowers/farms/${farmId}/week`);
 }
 
 function asDates(row: PlantingRecord, name: string, colour: string): PlantingDates {
@@ -633,15 +674,15 @@ function occupiedEnd(planting: PlantingDates): string {
 }
 
 function revalidateFarm(farmId: string) {
-  revalidatePath("/app");
-  revalidatePath(`/app/farms/${farmId}`);
-  revalidatePath(`/app/farms/${farmId}/timeline`);
-  revalidatePath(`/app/farms/${farmId}/plan`);
-  revalidatePath(`/app/farms/${farmId}/plants`);
-  revalidatePath(`/app/farms/${farmId}/harvest`);
-  revalidatePath(`/app/farms/${farmId}/week`);
-  revalidatePath(`/app/farms/${farmId}/map`);
-  revalidatePath(`/app/farms/${farmId}/beds`);
+  revalidatePath("/flowers");
+  revalidatePath(`/flowers/farms/${farmId}`);
+  revalidatePath(`/flowers/farms/${farmId}/timeline`);
+  revalidatePath(`/flowers/farms/${farmId}/plan`);
+  revalidatePath(`/flowers/farms/${farmId}/plants`);
+  revalidatePath(`/flowers/farms/${farmId}/harvest`);
+  revalidatePath(`/flowers/farms/${farmId}/week`);
+  revalidatePath(`/flowers/farms/${farmId}/map`);
+  revalidatePath(`/flowers/farms/${farmId}/beds`);
 }
 
 async function writeBeds(
@@ -684,9 +725,9 @@ function finishPlantingQuietly(farmId: string) {
   after(() => {
     void refreshTasks(farmId);
   });
-  revalidatePath(`/app/farms/${farmId}/week`);
-  revalidatePath(`/app/farms/${farmId}/map`);
-  revalidatePath(`/app/farms/${farmId}/plan`);
+  revalidatePath(`/flowers/farms/${farmId}/week`);
+  revalidatePath(`/flowers/farms/${farmId}/map`);
+  revalidatePath(`/flowers/farms/${farmId}/plan`);
 }
 
 export async function addPlanting(

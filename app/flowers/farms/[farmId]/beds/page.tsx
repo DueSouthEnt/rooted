@@ -20,7 +20,7 @@ export default async function BedsPage({ params }: { params: Promise<{ farmId: s
       />
       <p className="text-sm text-muted-foreground">
         Beds drawn on the{" "}
-        <Link href={`/app/farms/${farm.id}/map`} className="underline">
+        <Link href={`/flowers/farms/${farm.id}/map`} className="underline">
           satellite map
         </Link>{" "}
         use the same plant counts, including each stripe inside a block.
@@ -28,7 +28,7 @@ export default async function BedsPage({ params }: { params: Promise<{ farmId: s
       {planned.length === 0 ? (
         <p className="text-sm">
           Nothing planted on paper yet.{" "}
-          <Link href={`/app/farms/${farm.id}/flowers`} className="underline">
+          <Link href={`/flowers/farms/${farm.id}/flowers`} className="underline">
             Choose a few flowers
           </Link>{" "}
           first.

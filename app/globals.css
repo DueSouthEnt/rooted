@@ -153,7 +153,7 @@
   font-family: var(--font-wordmark), "Iowan Old Style", Palatino, serif;
   font-style: italic;
   font-weight: 500;
-  font-size: 2.15rem;
+  font-size: clamp(1.45rem, 4.2vw, 2.15rem);
   line-height: 1;
   letter-spacing: 0.01em;
 }

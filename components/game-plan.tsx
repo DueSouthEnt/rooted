@@ -77,7 +77,7 @@ export function GamePlan({
                     {planting.bedId ? (
                       bedNames[planting.bedId] ?? "A bed"
                     ) : (
-                      <Link href={`/app/farms/${farmId}/timeline?group=bed&place=${planting.id}`} className="underline">
+                      <Link href={`/flowers/farms/${farmId}/timeline?group=bed&place=${planting.id}`} className="underline">
                         Place on a bed
                       </Link>
                     )}
