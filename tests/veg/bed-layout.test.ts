@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   blockOutsideOutline,
   convexRingsOverlap,
+  displayLength,
   fromMetres,
   layoutBeds,
+  offsetLatLng,
+  pickMapShape,
   rectangleRing,
   rotateMetres,
   spanWidthForCount,
@@ -89,5 +92,46 @@ describe("layoutBeds", () => {
     expect(convexRingsOverlap(inside, neighbour)).toBe(true);
     const clear = rectangleRing({ latitude: center.latitude + 0.002, longitude: center.longitude }, 20, 8, 0);
     expect(convexRingsOverlap(inside, clear)).toBe(false);
+  });
+});
+
+describe("pickMapShape", () => {
+  const center = { latitude: 55.93, longitude: -3.22 };
+  const block = {
+    id: "block-1",
+    centerLat: center.latitude,
+    centerLng: center.longitude,
+    spanLengthM: 20,
+    spanWidthM: 8,
+    rotationDeg: 12,
+  };
+  const outline = rectangleRing(center, 80, 80, 0).map((point) => [point.longitude, point.latitude] as [number, number]);
+
+  it("selects a block before the outline it sits in", () => {
+    expect(pickMapShape(center, [block], [{ id: "field", outline }])).toEqual({ kind: "block", id: "block-1" });
+  });
+
+  it("selects an outline when the pointer misses every block", () => {
+    const beside = offsetLatLng(center, 30, 0);
+    expect(pickMapShape(beside, [block], [{ id: "field", outline }])).toEqual({ kind: "area", id: "field" });
+  });
+
+  it("selects nothing outside the drawn shapes", () => {
+    expect(pickMapShape(offsetLatLng(center, 200, 0), [block], [{ id: "field", outline }])).toBeNull();
+  });
+});
+
+describe("display length", () => {
+  it("changes only the number on screen when the unit switches", () => {
+    const storedMetres = 30;
+    const feet = displayLength(storedMetres, "m", "ft");
+    expect(feet).toBeCloseTo(98.425, 2);
+    expect(toMetres(feet, "ft")).toBeCloseTo(storedMetres, 5);
+    expect(displayLength(storedMetres, "m", "m")).toBe(30);
+  });
+
+  it("reads an older feet measurement as metres before showing it", () => {
+    expect(displayLength(10, "ft", "m")).toBeCloseTo(3.048, 3);
+    expect(displayLength(10, "ft", "ft")).toBeCloseTo(10, 5);
   });
 });

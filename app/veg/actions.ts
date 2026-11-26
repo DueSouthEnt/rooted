@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
+import { createClient } from "@/lib/supabase/server";
 import {
   addBed,
   assignPlantingBeds,
@@ -161,6 +162,21 @@ export async function setTaskStatusAction(id: string, status: "open" | "done") {
   const result = await usingFarm(() => setTaskStatus(id, status));
   if (result.ok) refresh();
   return result;
+}
+
+export async function saveDisplayUnitAction(unit: "m" | "ft") {
+  if (unit !== "m" && unit !== "ft") return;
+  try {
+    const supabase = await createClient();
+    const { data: auth } = await supabase.auth.getUser();
+    if (!auth.user) return;
+    const { data: farms } = await supabase.from("farms").select("id").eq("user_id", auth.user.id).order("created_at").limit(1);
+    const farmId = farms?.[0]?.id;
+    if (!farmId) return;
+    await supabase.from("veg_farm_settings").upsert({ farm_id: farmId, display_unit: unit }, { onConflict: "farm_id" });
+  } catch {
+    // The lengths stay in metres either way. The browser keeps the preference if this column is not there yet.
+  }
 }
 
 export async function saveFrostSettingsAction(input: {

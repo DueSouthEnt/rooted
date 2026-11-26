@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import { FarmMapLoader } from "@/components/veg/farm/farm-map-loader";
 import { todayISO } from "@/lib/veg/dates";
 import { resolveMapTiles } from "@/lib/veg/map-tiles";
+import { readDisplayUnit } from "@/lib/veg/display-unit";
 import { getFarmSettings, getFrostContext, listBlocks, listCrops, listFarmAreas, listPlantings, listTasks } from "@/lib/veg/queries";
 import { getSeason } from "@/lib/veg/season";
 import Loading from "../loading";
@@ -40,6 +41,7 @@ async function FarmContent() {
         manualLastSpringFrost: settings?.manualLastSpringFrost ?? null,
         manualFirstAutumnFrost: settings?.manualFirstAutumnFrost ?? null,
         useManualFrost: settings?.useManualFrost === 1,
+        displayUnit: await readDisplayUnit(),
       }}
     />
   );

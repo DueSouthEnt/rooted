@@ -15,7 +15,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { Map as LeafletMap, LeafletMouseEvent } from "leaflet";
-import { deleteBlockAction, deleteFarmAreaAction, saveFarmAreaAction, saveFrostSettingsAction, saveMapBlockAction } from "@/app/veg/actions";
+import { deleteBlockAction, deleteFarmAreaAction, saveDisplayUnitAction, saveFarmAreaAction, saveFrostSettingsAction, saveMapBlockAction } from "@/app/veg/actions";
 import { Button } from "@/components/veg/ui/button";
 import { Input } from "@/components/veg/ui/input";
 import { assignPlantingBedsAction } from "@/app/veg/actions";
@@ -30,9 +30,11 @@ import {
   blockOutsideOutline,
   convexRingsOverlap,
   deltaMetres,
+  displayLength,
   fromMetres,
   layoutBeds,
   offsetLatLng,
+  pickMapShape,
   rectangleRing,
   ringAreaM2,
   ringContains,
@@ -87,6 +89,15 @@ type Drag =
       spanLengthM: number;
       spanWidthM: number;
       moved: boolean;
+    }
+  | {
+      kind: "move-area";
+      areaId: string;
+      name: string;
+      start: LatLng;
+      outline: [number, number][];
+      latestOutline: [number, number][] | null;
+      moved: boolean;
     };
 
 type Setup = {
@@ -107,6 +118,7 @@ type FarmPoint = {
   manualLastSpringFrost: string | null;
   manualFirstAutumnFrost: string | null;
   useManualFrost: boolean;
+  displayUnit?: Unit;
 };
 
 type GeocodeHit = {
@@ -135,7 +147,7 @@ function blockArea(block: BlockView): number {
   return 0;
 }
 
-function placementWarnings(block: BlockView, areas: FarmAreaView[], all: BlockView[]): string[] {
+function placementWarnings(block: BlockView, areas: FarmAreaView[], all: BlockView[], displayUnit: Unit): string[] {
   if (block.centerLat == null || block.centerLng == null || block.spanLengthM == null || block.spanWidthM == null) return [];
   const ring = rectangleRing(
     { latitude: block.centerLat, longitude: block.centerLng },
@@ -166,7 +178,7 @@ function placementWarnings(block: BlockView, areas: FarmAreaView[], all: BlockVi
   });
   if (layout.clipped) {
     warnings.push(
-      `Beds are clipped to ${fromMetres(layout.bedLengthM, block.unit).toFixed(1)} ${block.unit}. The length you set is ${block.bedLength} ${block.unit}.`,
+      `Beds are clipped to ${displayLength(layout.bedLengthM, "m", displayUnit).toFixed(1)} ${displayUnit}. The length you set is ${displayLength(block.bedLength, block.unit, displayUnit).toFixed(1)} ${displayUnit}.`,
     );
   }
   return warnings;
@@ -252,18 +264,11 @@ export function SatelliteFarm({
   const [selectedBedId, setSelectedBedId] = useState<string | null>(null);
   const [pickerId, setPickerId] = useState<string | null>(null);
   showCropsRef.current = showCrops;
-  const [setup, setSetup] = useState<Setup>({
-    name: "",
-    type: "open_field",
-    unit: "m",
-    bedLength: 30,
-    bedWidth: 0.75,
-    pathWidth: 0.45,
-    rotation: 0,
-  });
+  const [displayUnit, setDisplayUnit] = useState<Unit>(() => readDisplayUnit(settings.displayUnit ?? "m"));
+  const [setup, setSetup] = useState<Setup>(() => initialSetup(readDisplayUnit(settings.displayUnit ?? "m")));
 
-  const stateRef = useRef({ areas, blocks, mode, setup, outlineDraft, selectedAreaId });
-  stateRef.current = { areas, blocks, mode, setup, outlineDraft, selectedAreaId };
+  const stateRef = useRef({ areas, blocks, mode, setup, outlineDraft, selectedAreaId, selectedId });
+  stateRef.current = { areas, blocks, mode, setup, outlineDraft, selectedAreaId, selectedId };
   const dragRef = useRef<Drag | null>(null);
   const pendingGeom = useRef<Geom | null>(null);
   const ignoreClick = useRef(false);
@@ -271,6 +276,8 @@ export function SatelliteFarm({
     saveOutline: (_id: string | undefined, _name: string, _outline: [number, number][]) => {},
     commitDrawn: (_preview: Preview) => {},
     commitGeometry: (_blockId: string, _geom: Omit<Geom, "id">) => {},
+    removeBlock: (_id: string) => {},
+    removeArea: (_id: string) => {},
   });
 
   useEffect(() => {
@@ -295,6 +302,7 @@ export function SatelliteFarm({
   useEffect(() => {
     let map: LeafletMap | null = null;
     let cancelled = false;
+    let stopGestures = () => {};
     const node = mapEl.current;
     if (!node) return;
 
@@ -334,41 +342,65 @@ export function SatelliteFarm({
           for (const [longitude, latitude] of area.outline) bounds.extend([latitude, longitude]);
         }
       }
-      if (bounds.isValid()) map.fitBounds(bounds, { paddingTopLeft: [320, 80], paddingBottomRight: [48, 36], maxZoom: 19 });
-      else map.setView([point.latitude ?? 55.9352, point.longitude ?? -3.2184], 16);
-      requestAnimationFrame(() => map?.invalidateSize());
+      const fitView = () => {
+        if (cancelled || !map) return;
+        map.invalidateSize();
+        if (bounds.isValid()) map.fitBounds(bounds, { paddingTopLeft: [320, 80], paddingBottomRight: [48, 36], maxZoom: 19 });
+        else map.setView([point.latitude ?? 55.9352, point.longitude ?? -3.2184], 16);
+      };
+      fitView();
+      requestAnimationFrame(fitView);
 
       const toPoint = (latlng: { lat: number; lng: number }): LatLng => ({ latitude: latlng.lat, longitude: latlng.lng });
 
-      map.on("mousedown", (event: LeafletMouseEvent) => {
-        const current = stateRef.current;
-        if (current.mode !== "block" || dragRef.current) return;
-        const target = event.originalEvent.target as HTMLElement | null;
-        if (target?.closest(".leaflet-marker-icon")) return;
-        map?.dragging.disable();
-        dragRef.current = { kind: "draw", start: toPoint(event.latlng), moved: false, latest: null };
-      });
-
-      map.on("mousemove", (event: LeafletMouseEvent) => {
+      const pointFromClient = (clientX: number, clientY: number): LatLng => {
+        const latlng = map!.mouseEventToLatLng({ clientX, clientY } as MouseEvent);
+        return { latitude: latlng.lat, longitude: latlng.lng };
+      };
+      const eventPoint = (event: Event): LatLng | null => {
+        if ("touches" in event && (event as TouchEvent).touches.length > 0) {
+          const touch = (event as TouchEvent).touches[0];
+          return pointFromClient(touch.clientX, touch.clientY);
+        }
+        if ("clientX" in event) {
+          const mouse = event as MouseEvent;
+          return pointFromClient(mouse.clientX, mouse.clientY);
+        }
+        return null;
+      };
+      const publishMove = (here: LatLng) => {
         const drag = dragRef.current;
         if (!drag) return;
-        const here = toPoint(event.latlng);
-        drag.moved = true;
         if (drag.kind === "draw") {
+          drag.moved = true;
           const next = previewFromDrag(drag.start, here, stateRef.current.setup);
           drag.latest = next;
           setPreview(next);
           return;
         }
+        if (drag.kind === "move-area") {
+          const delta = deltaMetres(drag.start, here);
+          if (Math.hypot(delta.eastM, delta.northM) < 0.25) return;
+          drag.moved = true;
+          const outline = drag.outline.map(([longitude, latitude]) => {
+            const next = offsetLatLng({ latitude, longitude }, delta.eastM, delta.northM);
+            return [next.longitude, next.latitude] as [number, number];
+          });
+          drag.latestOutline = outline;
+          setAreas((current) => current.map((area) => (area.id === drag.areaId ? { ...area, outline } : area)));
+          return;
+        }
         const block = stateRef.current.blocks.find((item) => item.id === drag.blockId);
         if (!block) return;
+        const travel = deltaMetres(drag.start, here);
+        if (drag.kind === "move" && Math.hypot(travel.eastM, travel.northM) < 0.25) return;
+        drag.moved = true;
         const publish = (geom: Geom) => {
           pendingGeom.current = geom;
           setOverride(geom);
         };
         if (drag.kind === "move") {
-          const delta = deltaMetres(drag.start, here);
-          const center = offsetLatLng(drag.origin, delta.eastM, delta.northM);
+          const center = offsetLatLng(drag.origin, travel.eastM, travel.northM);
           publish({
             id: drag.blockId,
             centerLat: center.latitude,
@@ -401,9 +433,8 @@ export function SatelliteFarm({
           spanLengthM: drag.kind === "length" ? Math.max(1, Math.abs(local.alongM) * 2) : drag.spanLengthM,
           spanWidthM: drag.kind === "width" ? Math.max(minimumWidth, Math.abs(local.acrossM) * 2) : drag.spanWidthM,
         });
-      });
-
-      map.on("mouseup", () => {
+      };
+      const finishDrag = () => {
         const drag = dragRef.current;
         dragRef.current = null;
         if (!drag) return;
@@ -415,13 +446,103 @@ export function SatelliteFarm({
           else setPreview(null);
           return;
         }
+        if (drag.kind === "move-area") {
+          if (drag.moved && drag.latestOutline) apiRef.current.saveOutline(drag.areaId, drag.name, drag.latestOutline);
+          return;
+        }
         if (!drag.moved) return;
         const live = pendingGeom.current;
         if (live && live.id === drag.blockId) {
           const { id, ...geom } = live;
           apiRef.current.commitGeometry(id, geom);
         }
+      };
+      const beginSelect = (event: Event) => {
+        if (dragRef.current) {
+          event.stopPropagation();
+          return;
+        }
+        const current = stateRef.current;
+        if (current.mode !== "select") return;
+        const target = event.target as Element | null;
+        if (target?.closest?.(".leaflet-control, .leaflet-marker-icon, .resize-handle")) return;
+        if (target?.classList?.contains("resize-handle")) return;
+        const point = eventPoint(event);
+        if (!point || !map) return;
+        const hit = pickMapShape(point, current.blocks, current.areas);
+        if (!hit) return;
+        event.stopPropagation();
+        if (event.cancelable) event.preventDefault();
+        map.dragging.disable();
+        if (hit.kind === "block") {
+          const block = current.blocks.find((item) => item.id === hit.id);
+          if (block?.centerLat == null || block.centerLng == null || block.spanLengthM == null || block.spanWidthM == null) return;
+          const already = current.selectedId === block.id;
+          setSelectedId(block.id);
+          setSelectedAreaId(block.farmAreaId);
+          setMode("select");
+          if (already) {
+            const bedHit = bedRingsRef.current.find((bed) => ringContains(bed.ring, point));
+            setSelectedBedId(bedHit && block.beds.some((bed) => bed.id === bedHit.id) ? bedHit.id : null);
+          } else setSelectedBedId(null);
+          dragRef.current = {
+            kind: "move",
+            blockId: block.id,
+            start: point,
+            origin: { latitude: block.centerLat, longitude: block.centerLng },
+            rotation: block.rotationDeg ?? 0,
+            spanLengthM: block.spanLengthM,
+            spanWidthM: block.spanWidthM,
+            moved: false,
+          };
+          return;
+        }
+        const area = current.areas.find((item) => item.id === hit.id);
+        if (!area) return;
+        setSelectedAreaId(area.id);
+        setSelectedId(null);
+        setSelectedBedId(null);
+        dragRef.current = {
+          kind: "move-area",
+          areaId: area.id,
+          name: area.name,
+          start: point,
+          outline: area.outline,
+          latestOutline: null,
+          moved: false,
+        };
+      };
+      const follow = (event: Event) => {
+        if (!dragRef.current) return;
+        if (event.type === "touchmove" && event.cancelable) event.preventDefault();
+        const here = eventPoint(event);
+        if (here) publishMove(here);
+      };
+      node.addEventListener("mousedown", beginSelect, true);
+      node.addEventListener("touchstart", beginSelect, { capture: true, passive: false });
+      window.addEventListener("mousemove", follow);
+      window.addEventListener("touchmove", follow, { passive: false });
+      window.addEventListener("mouseup", finishDrag);
+      window.addEventListener("touchend", finishDrag);
+      stopGestures = () => {
+        node.removeEventListener("mousedown", beginSelect, true);
+        node.removeEventListener("touchstart", beginSelect, true);
+        window.removeEventListener("mousemove", follow);
+        window.removeEventListener("touchmove", follow);
+        window.removeEventListener("mouseup", finishDrag);
+        window.removeEventListener("touchend", finishDrag);
+      };
+
+      map.on("mousedown", (event: LeafletMouseEvent) => {
+        const current = stateRef.current;
+        if (current.mode !== "block" || dragRef.current) return;
+        const target = event.originalEvent.target as HTMLElement | null;
+        if (target?.closest(".leaflet-marker-icon, .resize-handle")) return;
+        map?.dragging.disable();
+        dragRef.current = { kind: "draw", start: toPoint(event.latlng), moved: false, latest: null };
       });
+
+      map.on("mouseup", finishDrag);
 
       map.on("click", (event: LeafletMouseEvent) => {
         if (ignoreClick.current) {
@@ -450,6 +571,7 @@ export function SatelliteFarm({
 
     return () => {
       cancelled = true;
+      stopGestures();
       map?.remove();
       mapRef.current = null;
     };
@@ -529,7 +651,7 @@ export function SatelliteFarm({
         const ring = rectangleRing(center, spanLengthM, spanWidthM, rotation);
         L.polygon(
           ring.map((point) => [point.latitude, point.longitude]),
-          { color: CLAY, weight: selected ? 3 : 1.5, fillColor: PATH, fillOpacity: 0.92 },
+          { color: CLAY, weight: selected ? 3 : 1.5, fillColor: PATH, fillOpacity: 0.92, interactive: false },
         ).addTo(layer);
         const layout = layoutBeds({ spanLengthM, spanWidthM, ...spec });
         const pitchPoint = offsetLatLng(center, ...pair(rotateMetres(0, layout.bedWidthM + layout.pathWidthM, rotation)));
@@ -553,6 +675,7 @@ export function SatelliteFarm({
             weight: status ? 3 : 1,
             fillColor: status === "clash" ? "#F8E6DC" : status === "free" ? "#E4EDD4" : crop ? crop.color : SOIL,
             fillOpacity: 0.92,
+            interactive: false,
           }).addTo(layer);
           if (bedId) bedPolyRef.current.set(bedId, poly);
           if (names[index]) poly.bindTooltip(names[index], { sticky: true, direction: "top" });
@@ -611,15 +734,17 @@ export function SatelliteFarm({
           },
         ).addTo(layer);
         polygon.on("click", (event) => {
-          L.DomEvent.stopPropagation(event);
+          L.DomEvent.stopPropagation(event.originalEvent);
           setSelectedAreaId(area.id);
           setSelectedId(null);
+          setSelectedBedId(null);
+          setMode("select");
         });
         if (area.id === selectedAreaId && mode === "select") {
           const markers = ring.map((point) => {
             const marker = L.marker([point.latitude, point.longitude], {
               draggable: true,
-              icon: L.divIcon({ className: "vertex-handle", iconSize: [14, 14], iconAnchor: [7, 7] }),
+              icon: L.divIcon({ className: "vertex-handle", iconSize: [28, 28], iconAnchor: [14, 14] }),
             }).addTo(layer);
             marker.on("mousedown", (event) => L.DomEvent.stopPropagation(event.originalEvent));
             marker.on("drag", () => {
@@ -683,38 +808,11 @@ export function SatelliteFarm({
           block.beds.map((bed) => gardenerBedName(block.name, bed.position)),
           selected,
         );
-        const ring = rectangleRing(center, spanLengthM, spanWidthM, rotation);
-        const hit = L.polygon(
-          ring.map((point) => [point.latitude, point.longitude]),
-          { stroke: false, color: CLAY, fillColor: CLAY, fillOpacity: 0.01, interactive: true },
-        ).addTo(layer);
-        hit.on("click", (event) => {
-          L.DomEvent.stopPropagation(event);
-          const point = { latitude: event.latlng.lat, longitude: event.latlng.lng };
-          const bedHit = bedRingsRef.current.find((bed) => ringContains(bed.ring, point));
-          setSelectedBedId(bedHit && block.beds.some((bed) => bed.id === bedHit.id) ? bedHit.id : null);
-          setSelectedId(block.id);
-          setSelectedAreaId(block.farmAreaId);
-          setMode("select");
-        });
         if (selected && mode === "select") {
-          hit.on("mousedown", (event) => {
-            L.DomEvent.stopPropagation(event.originalEvent);
-            map.dragging.disable();
-            dragRef.current = {
-              kind: "move",
-              blockId: block.id,
-              start: { latitude: event.latlng.lat, longitude: event.latlng.lng },
-              origin: center,
-              rotation,
-              spanLengthM,
-              spanWidthM,
-              moved: false,
-            };
-          });
           const handle = (kind: "rotate" | "length" | "width", at: LatLng) => {
             const marker = L.circleMarker([at.latitude, at.longitude], {
-              radius: kind === "rotate" ? 8 : 6,
+              radius: kind === "rotate" ? 16 : 14,
+              className: "resize-handle",
               color: CLAY,
               fillColor: kind === "rotate" ? WHEAT : LINEN,
               fillOpacity: 1,
@@ -815,10 +913,10 @@ export function SatelliteFarm({
       farmAreaId: containing?.id ?? selectedAreaId,
       name,
       type: setup.type,
-      unit: setup.unit,
-      bedLength: setup.bedLength,
-      bedWidth: setup.bedWidth,
-      pathWidth: setup.pathWidth,
+      unit: "m",
+      bedLength: toMetres(setup.bedLength, setup.unit),
+      bedWidth: toMetres(setup.bedWidth, setup.unit),
+      pathWidth: toMetres(setup.pathWidth, setup.unit),
       centerLat: next.center.latitude,
       centerLng: next.center.longitude,
       rotationDeg: next.rotation,
@@ -840,25 +938,6 @@ export function SatelliteFarm({
   async function commitGeometry(blockId: string, geom: Omit<Geom, "id">) {
     const block = blocks.find((item) => item.id === blockId);
     if (!block) return;
-    const containing = areas.find((area) =>
-      ringContains(outlineRing(area.outline), { latitude: geom.centerLat, longitude: geom.centerLng }),
-    );
-    const result = await saveMapBlockAction({
-      id: block.id,
-      farmAreaId: containing?.id ?? block.farmAreaId,
-      name: block.name,
-      type: block.type,
-      unit: block.unit,
-      bedLength: block.bedLength,
-      bedWidth: block.bedWidth,
-      pathWidth: block.pathWidth,
-      ...geom,
-    });
-    if (!result.ok) {
-      setOverride(null);
-      setError(result.error);
-      return;
-    }
     setBlocks((current) =>
       current.map((item) =>
         item.id === blockId
@@ -874,12 +953,30 @@ export function SatelliteFarm({
       ),
     );
     setOverride(null);
+    const containing = areas.find((area) =>
+      ringContains(outlineRing(area.outline), { latitude: geom.centerLat, longitude: geom.centerLng }),
+    );
+    const result = await saveMapBlockAction({
+      id: block.id,
+      farmAreaId: containing?.id ?? block.farmAreaId,
+      name: block.name,
+      type: block.type,
+      unit: block.unit,
+      bedLength: block.bedLength,
+      bedWidth: block.bedWidth,
+      pathWidth: block.pathWidth,
+      ...geom,
+    });
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
     setError(null);
     setNotice(result.data.warnings[0] ?? null);
     router.refresh();
   }
 
-  apiRef.current = { saveOutline, commitDrawn, commitGeometry };
+  apiRef.current = { saveOutline, commitDrawn, commitGeometry, removeBlock, removeArea };
 
   async function commitFields(patch: Partial<Setup & { bedCount: number; spanLengthM: number }>) {
     const block = blocks.find((item) => item.id === selectedId);
@@ -961,6 +1058,86 @@ export function SatelliteFarm({
     router.refresh();
   }
 
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const tag = (event.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (event.target as HTMLElement | null)?.isContentEditable) return;
+      const current = stateRef.current;
+      const block = current.blocks.find((item) => item.id === current.selectedId);
+      if (event.key === "Delete" || event.key === "Backspace") {
+        if (block) {
+          event.preventDefault();
+          void apiRef.current.removeBlock(block.id);
+        } else if (current.selectedAreaId) {
+          event.preventDefault();
+          void apiRef.current.removeArea(current.selectedAreaId);
+        }
+        return;
+      }
+      const step = event.shiftKey ? 2 : 0.5;
+      const direction: Record<string, [number, number] | undefined> = {
+        ArrowUp: [0, step],
+        ArrowDown: [0, -step],
+        ArrowLeft: [-step, 0],
+        ArrowRight: [step, 0],
+      };
+      const delta = direction[event.key];
+      if (!delta) return;
+      if (block?.centerLat != null && block.centerLng != null && block.spanLengthM != null && block.spanWidthM != null) {
+        event.preventDefault();
+        const next = offsetLatLng({ latitude: block.centerLat, longitude: block.centerLng }, delta[0], delta[1]);
+        void apiRef.current.commitGeometry(block.id, {
+          centerLat: next.latitude,
+          centerLng: next.longitude,
+          rotationDeg: block.rotationDeg ?? 0,
+          spanLengthM: block.spanLengthM,
+          spanWidthM: block.spanWidthM,
+        });
+        return;
+      }
+      const area = current.areas.find((item) => item.id === current.selectedAreaId);
+      if (!area) return;
+      event.preventDefault();
+      const outline = area.outline.map(([longitude, latitude]) => {
+        const moved = offsetLatLng({ latitude, longitude }, delta[0], delta[1]);
+        return [moved.longitude, moved.latitude] as [number, number];
+      });
+      void apiRef.current.saveOutline(area.id, area.name, outline);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  function commitMeasured(patch: { bedLength?: number; bedWidth?: number; pathWidth?: number; bedCount?: number; spanLengthM?: number }) {
+    const block = blocks.find((item) => item.id === selectedId);
+    if (!block) return;
+    void commitFields({
+      unit: "m",
+      bedLength: patch.bedLength != null ? toMetres(patch.bedLength, displayUnit) : toMetres(block.bedLength, block.unit),
+      bedWidth: patch.bedWidth != null ? toMetres(patch.bedWidth, displayUnit) : toMetres(block.bedWidth, block.unit),
+      pathWidth: patch.pathWidth != null ? toMetres(patch.pathWidth, displayUnit) : toMetres(block.pathWidth, block.unit),
+      bedCount: patch.bedCount,
+      spanLengthM: patch.spanLengthM != null ? toMetres(patch.spanLengthM, displayUnit) : undefined,
+    });
+  }
+
+  function chooseDisplayUnit(unit: Unit) {
+    setDisplayUnit(unit);
+    setSetup((current) => ({
+      ...current,
+      unit,
+      bedLength: round1(fromMetres(toMetres(current.bedLength, current.unit), unit)),
+      bedWidth: round1(fromMetres(toMetres(current.bedWidth, current.unit), unit)),
+      pathWidth: round1(fromMetres(toMetres(current.pathWidth, current.unit), unit)),
+    }));
+    try {
+      window.localStorage.setItem("veg-display-unit", unit);
+    } catch {
+      // The map still switches. The preference just stays for this visit.
+    }
+    void saveDisplayUnitAction(unit);
+  }
+
   const selected = blocks.find((block) => block.id === selectedId) ?? null;
   const shown = selected
     ? {
@@ -972,7 +1149,7 @@ export function SatelliteFarm({
         spanWidthM: override?.id === selected.id ? override.spanWidthM : selected.spanWidthM,
       }
     : null;
-  const warnings = shown ? placementWarnings(shown, areas, blocks) : [];
+  const warnings = shown ? placementWarnings(shown, areas, blocks, displayUnit) : [];
   const selectedBedRecord = blocks.flatMap((block) => block.beds.map((bed) => ({ bed, block }))).find((item) => item.bed.id === selectedBedId) ?? null;
   const selectedBed = selectedBedRecord
     ? {
@@ -1048,7 +1225,7 @@ export function SatelliteFarm({
 
   return (
     <div className="farm-map relative -mx-4 -my-6 h-[calc(100dvh-4.25rem)] overflow-hidden bg-[#d7c4a8] lg:-mx-8 lg:-my-8">
-      <div ref={mapEl} data-testid="farm-map" className="absolute inset-0" />
+      <div ref={mapEl} data-testid="farm-map" className="absolute inset-0 touch-none" />
 
       <div className="pointer-events-none absolute inset-x-0 top-3 z-[500] flex justify-center px-3">
         <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-xl border border-border bg-card/95 p-1 shadow-sm">
@@ -1364,16 +1541,9 @@ export function SatelliteFarm({
                 key={unit}
                 type="button"
                 size="sm"
-                variant={setup.unit === unit ? "default" : "outline"}
-                onClick={() =>
-                  setSetup((current) => ({
-                    ...current,
-                    unit,
-                    bedLength: round1(fromMetres(toMetres(current.bedLength, current.unit), unit)),
-                    bedWidth: round1(fromMetres(toMetres(current.bedWidth, current.unit), unit)),
-                    pathWidth: round1(fromMetres(toMetres(current.pathWidth, current.unit), unit)),
-                  }))
-                }
+                variant={displayUnit === unit ? "default" : "outline"}
+                data-testid={`setup-unit-${unit}`}
+                onClick={() => chooseDisplayUnit(unit)}
               >
                 {unit === "m" ? "Metres" : "Feet"}
               </Button>
@@ -1438,7 +1608,7 @@ export function SatelliteFarm({
               <p className="font-display text-lg leading-none">Block</p>
               <p className="mt-1 num text-xs text-muted-foreground">
                 {shown.spanLengthM != null && shown.spanWidthM != null
-                  ? `${fromMetres(shown.spanLengthM, shown.unit).toFixed(1)} × ${fromMetres(shown.spanWidthM, shown.unit).toFixed(1)} ${shown.unit}`
+                  ? `${displayLength(shown.spanLengthM, "m", displayUnit).toFixed(1)} × ${displayLength(shown.spanWidthM, "m", displayUnit).toFixed(1)} ${displayUnit}`
                   : "Not placed on the map"}
                 {shown.spanLengthM != null && shown.spanWidthM != null ? ` · ${Math.round(shown.spanLengthM * shown.spanWidthM).toLocaleString("en-GB")} m²` : ""}
               </p>
@@ -1472,36 +1642,40 @@ export function SatelliteFarm({
                 key={unit}
                 type="button"
                 size="sm"
-                variant={shown.unit === unit ? "default" : "outline"}
-                onClick={() => {
-                  if (unit === shown.unit) return;
-                  void commitFields({
-                    unit,
-                    bedLength: round1(fromMetres(toMetres(shown.bedLength, shown.unit), unit)),
-                    bedWidth: round1(fromMetres(toMetres(shown.bedWidth, shown.unit), unit)),
-                    pathWidth: round1(fromMetres(toMetres(shown.pathWidth, shown.unit), unit)),
-                  });
-                }}
+                variant={displayUnit === unit ? "default" : "outline"}
+                data-testid={`block-unit-${unit}`}
+                onClick={() => chooseDisplayUnit(unit)}
               >
                 {unit === "m" ? "Metres" : "Feet"}
               </Button>
             ))}
           </div>
+          <p className="text-xs text-muted-foreground">Shown in {displayUnit === "m" ? "metres" : "feet"}. Saved in metres.</p>
           <div className="grid grid-cols-3 gap-2">
             <NumberField
               label="Bed length"
               testId="block-bed-length"
-              value={shown.bedLength}
-              onChange={(bedLength) => void commitFields({ bedLength, spanLengthM: toMetres(bedLength, shown.unit) })}
+              value={round1(displayLength(shown.bedLength, shown.unit, displayUnit))}
+              onChange={(bedLength) => void commitMeasured({ bedLength, spanLengthM: bedLength })}
             />
-            <NumberField label="Bed width" testId="block-bed-width" value={shown.bedWidth} onChange={(bedWidth) => void commitFields({ bedWidth })} />
-            <NumberField label="Path width" testId="block-path-width" value={shown.pathWidth} onChange={(pathWidth) => void commitFields({ pathWidth })} />
+            <NumberField
+              label="Bed width"
+              testId="block-bed-width"
+              value={round1(displayLength(shown.bedWidth, shown.unit, displayUnit))}
+              onChange={(bedWidth) => void commitMeasured({ bedWidth })}
+            />
+            <NumberField
+              label="Path width"
+              testId="block-path-width"
+              value={round1(displayLength(shown.pathWidth, shown.unit, displayUnit))}
+              onChange={(pathWidth) => void commitMeasured({ pathWidth })}
+            />
           </div>
           <NumberField
             label="Number of beds"
             testId="block-bed-count"
             value={shown.beds.length}
-            onChange={(bedCount) => void commitFields({ bedCount: Math.max(1, Math.round(bedCount)) })}
+            onChange={(bedCount) => void commitMeasured({ bedCount: Math.max(1, Math.round(bedCount)) })}
           />
           <NumberField
             label="Rotation (degrees)"
@@ -1510,7 +1684,7 @@ export function SatelliteFarm({
             onChange={(rotation) => void commitFields({ rotation })}
           />
           <p className="text-xs leading-5 text-muted-foreground">
-            Drag the block to move it. The wheat handle rotates it, and the linen handles change length and width. Beds reflow.
+            Drag the block to move it. The wheat handle rotates it, and the linen handles change length and width. Arrow keys nudge it. Delete removes it.
           </p>
           {warnings.length > 0 ? (
             <ul data-testid="block-warnings" className="grid gap-1 rounded-lg bg-warning px-2 py-2 text-xs text-warning-foreground">
@@ -1578,6 +1752,29 @@ function dateFromOffset(season: number, offset: number): string {
 
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+function readDisplayUnit(fallback: Unit): Unit {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const saved = window.localStorage.getItem("veg-display-unit");
+    if (saved === "m" || saved === "ft") return saved;
+  } catch {
+    // Keep the unit that came from the farm.
+  }
+  return fallback;
+}
+
+function initialSetup(unit: Unit): Setup {
+  const metres = { name: "", type: "open_field" as const, unit: "m" as const, bedLength: 30, bedWidth: 0.75, pathWidth: 0.45, rotation: 0 };
+  if (unit === "m") return metres;
+  return {
+    ...metres,
+    unit,
+    bedLength: round1(fromMetres(metres.bedLength, unit)),
+    bedWidth: round1(fromMetres(metres.bedWidth, unit)),
+    pathWidth: round1(fromMetres(metres.pathWidth, unit)),
+  };
 }
 
 function ToolButton({

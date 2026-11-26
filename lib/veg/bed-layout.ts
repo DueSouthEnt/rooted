@@ -221,3 +221,47 @@ export function blockOutsideOutline(blockRing: LatLng[], outline: LatLng[]): boo
   if (outline.length < 3) return false;
   return blockRing.some((corner) => !ringContains(outline, corner));
 }
+
+export type MapBlockHit = {
+  id: string;
+  centerLat: number | null;
+  centerLng: number | null;
+  spanLengthM: number | null;
+  spanWidthM: number | null;
+  rotationDeg: number | null;
+};
+
+export type MapAreaHit = {
+  id: string;
+  outline: [number, number][];
+};
+
+/** The shape under a pointer. A block wins when it sits inside an outline. */
+export function pickMapShape(
+  point: LatLng,
+  blocks: MapBlockHit[],
+  areas: MapAreaHit[],
+): { kind: "block"; id: string } | { kind: "area"; id: string } | null {
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const block = blocks[index];
+    if (block.centerLat == null || block.centerLng == null || block.spanLengthM == null || block.spanWidthM == null) continue;
+    const ring = rectangleRing(
+      { latitude: block.centerLat, longitude: block.centerLng },
+      block.spanLengthM,
+      block.spanWidthM,
+      block.rotationDeg ?? 0,
+    );
+    if (ringContains(ring, point)) return { kind: "block", id: block.id };
+  }
+  for (let index = areas.length - 1; index >= 0; index -= 1) {
+    const area = areas[index];
+    const ring = area.outline.map(([longitude, latitude]) => ({ latitude, longitude }));
+    if (ring.length >= 3 && ringContains(ring, point)) return { kind: "area", id: area.id };
+  }
+  return null;
+}
+
+/** Convert a stored length into the unit on screen. The stored number is left unchanged. */
+export function displayLength(stored: number, storedUnit: LayoutUnit, displayUnit: LayoutUnit): number {
+  return fromMetres(toMetres(stored, storedUnit), displayUnit);
+}

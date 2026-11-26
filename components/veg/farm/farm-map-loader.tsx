@@ -19,6 +19,7 @@ type FarmPoint = {
   manualLastSpringFrost: string | null;
   manualFirstAutumnFrost: string | null;
   useManualFrost: boolean;
+  displayUnit?: "m" | "ft";
 };
 
 export function FarmMapLoader(props: {
