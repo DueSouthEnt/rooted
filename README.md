@@ -144,9 +144,11 @@ Deploy the Next.js app anywhere that runs Node (a small VPS, or a host that supp
 
 ## Accounts
 
-Sign-up asks for flowers, vegetables, or both, and stores that on `profiles.enabled_sections`. A person has to confirm their email before they can get in. The check-inbox page is `/signup/confirm`, and the link returns to `/auth/callback`.
+Sign-up asks for flowers, vegetables, or both, and stores that on `profiles.enabled_sections`. A person has to confirm their email before they can get in. The check-inbox page is `/signup/confirm`, and the link returns to `/auth/callback`. After that, a new account waits on `/waiting` until an admin approves it at `/admin`.
 
-On the hosted project, turn on Authentication > Providers > Email > Confirm email. Under Authentication > URL Configuration, set the Site URL to the real app URL and add `https://<your-host>/auth/callback` to the redirect URLs (and the same for `http://127.0.0.1:43123` while you are on a laptop). Apply the sections migration with `npx supabase link --project-ref your-project-ref` and then `npx supabase db push`.
+On the hosted project, turn on Authentication > Providers > Email > Confirm email. Under Authentication > URL Configuration, set the Site URL to the real app URL and add `https://<your-host>/auth/callback` to the redirect URLs (and the same for `http://127.0.0.1:43123` while you are on a laptop). From a linked local copy, apply migrations with `npx supabase db push --remote`.
+
+Optional mail for new sign-ups: set `ADMIN_EMAIL` and `RESEND_API_KEY`. If either is missing, sign-up still works and no email is sent. Deleting an account from `/admin` needs `SUPABASE_SERVICE_ROLE_KEY` on the server only. Never put that key in a `NEXT_PUBLIC_` variable.
 
 ## Deploying to Vercel
 

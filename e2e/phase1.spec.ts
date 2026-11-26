@@ -19,7 +19,7 @@ test("sign up, confirm, log in, and switch sections", async ({ page }) => {
 
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Plan your growing year, from frost to harvest." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Plan your growing year" })).toBeVisible();
   await page.mouse.move(2, 2);
   await page.screenshot({ path: `${artifacts}/landing-desktop.png`, fullPage: true });
 

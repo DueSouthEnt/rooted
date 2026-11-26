@@ -128,18 +128,25 @@ export async function requireUser() {
 
 export async function loadProfile() {
   const { supabase, user } = await requireUser();
-  const { data } = await supabase
+  const full = await supabase
     .from("profiles")
-    .select("display_name, units, enabled_sections")
+    .select("display_name, units, enabled_sections, approved, is_admin")
     .eq("id", user.id)
     .maybeSingle();
+  const data = full.error
+    ? (await supabase.from("profiles").select("display_name, units, enabled_sections").eq("id", user.id).maybeSingle()).data
+    : full.data;
   const enabledSections = normalizeSections(data?.enabled_sections);
+  const approved = full.error ? true : full.data?.approved === true;
+  const isAdmin = full.error ? false : full.data?.is_admin === true;
   return {
     supabase,
     user,
     displayName: data?.display_name || user.email?.split("@")[0] || "there",
     units: data?.units === "imperial" ? "imperial" : "metric",
     enabledSections: (enabledSections.length ? enabledSections : ["flowers"]) as Section[],
+    approved,
+    isAdmin,
   } as const;
 }
 

@@ -1,0 +1,251 @@
+:root,
+[data-palette="sapphire"] {
+  /* Sapphire: a light page and a rich, soft blue sidebar. In-field sage stays on the map, not the chrome. */
+  --linen: #f3f6fb;
+  --linen-card: #fbfcfe;
+  --ink: #1a2744;
+  --ink-soft: #3e4e68;
+  --clay: #1e4d86;
+  --clay-foreground: #f7f5f0;
+  --wheat: #e8c56b;
+  --sage: #4e5c34;
+  --sage-wash: #e4edd8;
+  --soil: #2f5684;
+  --warning: #f8e6dc;
+  --warning-foreground: #5c2e22;
+  --warning-border: #e2c2b2;
+  --success: #e4edd8;
+  --success-foreground: #2f3b22;
+  --bed-soil: #c4a06a;
+  --bed-path: #e6d3b8;
+  --bed-house: #e4e2d0;
+  --bed-tunnel: #ead4b8;
+  --bed-ink: #1a2744;
+  --wash: #d9e6f8;
+  --wash-top: #f7f9fd;
+  --wash-bottom: #e7eef8;
+  --background: var(--linen);
+  --foreground: var(--ink);
+  --card: var(--linen-card);
+  --card-foreground: var(--ink);
+  --popover: var(--linen-card);
+  --popover-foreground: var(--ink);
+  --primary: var(--clay);
+  --primary-foreground: var(--clay-foreground);
+  --secondary: #e4ebf5;
+  --secondary-foreground: var(--ink);
+  --muted: #e7eef6;
+  --muted-foreground: var(--ink-soft);
+  --accent: var(--wheat);
+  --accent-foreground: var(--ink);
+  --destructive: #7a2433;
+  --border: #d5e0ee;
+  --input: #d5e0ee;
+  --ring: var(--clay);
+  --chart-1: #1e4d86;
+  --chart-2: #e8c56b;
+  --chart-3: #5d7eae;
+  --chart-4: #4e5c34;
+  --chart-5: #8aa4c8;
+  --radius: 0.8rem;
+  --sidebar: var(--soil);
+  --sidebar-foreground: #f7f5f0;
+  --sidebar-primary: #1e4d86;
+  --sidebar-primary-foreground: #f7f5f0;
+  --sidebar-accent: #e8c56b;
+  --sidebar-accent-foreground: #1a2744;
+  --sidebar-border: #24466c;
+  --sidebar-ring: #e8c56b;
+}
+
+[data-palette="sage"] {
+  /* Sage: grey-green, kept quiet so it does not turn the whole screen green. */
+  --linen: #f4f3ef;
+  --linen-card: #fbfaf7;
+  --ink: #24302b;
+  --ink-soft: #4c5a54;
+  --clay: #3e4c45;
+  --clay-foreground: #f7f6f2;
+  --wheat: #c9b48a;
+  --sage: #4e5c34;
+  --sage-wash: #e5edd8;
+  --soil: #d7ddd4;
+  --warning: #f6e6dc;
+  --warning-foreground: #5c2e22;
+  --warning-border: #e2c2b2;
+  --success: #e5edd8;
+  --success-foreground: #2f3b22;
+  --wash: #e3e6df;
+  --wash-top: #f7f6f3;
+  --wash-bottom: #e8ebe6;
+  --background: var(--linen);
+  --foreground: var(--ink);
+  --card: var(--linen-card);
+  --card-foreground: var(--ink);
+  --popover: var(--linen-card);
+  --popover-foreground: var(--ink);
+  --primary: var(--clay);
+  --primary-foreground: var(--clay-foreground);
+  --secondary: #e6eae4;
+  --secondary-foreground: var(--ink);
+  --muted: #e8ebe6;
+  --muted-foreground: var(--ink-soft);
+  --accent: var(--wheat);
+  --accent-foreground: var(--ink);
+  --destructive: #7a2433;
+  --border: #d5dbd4;
+  --input: #d5dbd4;
+  --ring: var(--clay);
+  --chart-1: #3e4c45;
+  --chart-2: #c9b48a;
+  --chart-3: #6d7b74;
+  --chart-4: #4e5c34;
+  --chart-5: #a8b2ab;
+  --sidebar: var(--soil);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: #3e4c45;
+  --sidebar-primary-foreground: #f7f6f2;
+  --sidebar-accent: #c9b48a;
+  --sidebar-accent-foreground: #24302b;
+  --sidebar-border: #c5cdc6;
+  --sidebar-ring: #3e4c45;
+}
+
+[data-palette="spruce"] {
+  --linen: #f6f4ee;
+  --linen-card: #fbfaf6;
+  --ink: #142e30;
+  --ink-soft: #3d5554;
+  --clay: #1b4e4a;
+  --clay-foreground: #f4f1ea;
+  --wheat: #d4c4a0;
+  --sage: #4e5c34;
+  --sage-wash: #e5edd8;
+  --soil: #1b3f42;
+  --warning: #f6e6dc;
+  --warning-foreground: #5c2e22;
+  --warning-border: #e2c2b2;
+  --success: #e5edd8;
+  --success-foreground: #2f3b22;
+  --wash: #d5e4e2;
+  --wash-top: #f8f6f1;
+  --wash-bottom: #e7efe9;
+  --background: var(--linen);
+  --foreground: var(--ink);
+  --card: var(--linen-card);
+  --card-foreground: var(--ink);
+  --popover: var(--linen-card);
+  --popover-foreground: var(--ink);
+  --primary: var(--clay);
+  --primary-foreground: var(--clay-foreground);
+  --secondary: #e5eeec;
+  --secondary-foreground: var(--ink);
+  --muted: #e6eeec;
+  --muted-foreground: var(--ink-soft);
+  --accent: var(--wheat);
+  --accent-foreground: var(--ink);
+  --destructive: #7a2433;
+  --border: #d5e0dc;
+  --input: #d5e0dc;
+  --ring: var(--clay);
+  --chart-1: #1b4e4a;
+  --chart-2: #d4c4a0;
+  --chart-3: #3d6d68;
+  --chart-4: #4e5c34;
+  --chart-5: #8eada8;
+  --sidebar: var(--soil);
+  --sidebar-foreground: #f4f1ea;
+  --sidebar-primary: #1b4e4a;
+  --sidebar-primary-foreground: #f4f1ea;
+  --sidebar-accent: #d4c4a0;
+  --sidebar-accent-foreground: #142e30;
+  --sidebar-border: #143336;
+  --sidebar-ring: #d4c4a0;
+}
+
+[data-palette="earth"] {
+  /* A lighter, warmer soil brown than the first Earth theme. */
+  --linen: #f7f1e6;
+  --linen-card: #fbf7f1;
+  --ink: #2c2118;
+  --ink-soft: #5c4a3c;
+  --clay: #8a4634;
+  --clay-foreground: #fff8f1;
+  --wheat: #e2b15a;
+  --sage: #4e5c34;
+  --sage-wash: #e4edd4;
+  --soil: #6b4e3c;
+  --warning: #f8e6dc;
+  --warning-foreground: #5c2a1c;
+  --warning-border: #e2b09a;
+  --success: #e4edd4;
+  --success-foreground: #3e4a28;
+  --wash: #f0ddc4;
+  --wash-top: #fbf6ee;
+  --wash-bottom: #f0e4d2;
+  --background: var(--linen);
+  --foreground: var(--ink);
+  --card: var(--linen-card);
+  --card-foreground: var(--ink);
+  --popover: var(--linen-card);
+  --popover-foreground: var(--ink);
+  --primary: var(--clay);
+  --primary-foreground: var(--clay-foreground);
+  --secondary: #f0e6d8;
+  --secondary-foreground: var(--ink);
+  --muted: #f0e6d8;
+  --muted-foreground: var(--ink-soft);
+  --accent: var(--wheat);
+  --accent-foreground: var(--ink);
+  --destructive: #7a2433;
+  --border: #e4d3c0;
+  --input: #e4d3c0;
+  --ring: var(--clay);
+  --chart-1: #8a4634;
+  --chart-2: #e2b15a;
+  --chart-3: #a86b52;
+  --chart-4: #4e5c34;
+  --chart-5: #c4a484;
+  --sidebar: var(--soil);
+  --sidebar-foreground: #fff8f1;
+  --sidebar-primary: #8a4634;
+  --sidebar-primary-foreground: #fff8f1;
+  --sidebar-accent: #e2b15a;
+  --sidebar-accent-foreground: #2c2118;
+  --sidebar-border: #5c4032;
+  --sidebar-ring: #e2b15a;
+}
+
+
+.font-display {
+  font-family: var(--font-display), Georgia, "Times New Roman", serif;
+}
+
+.banner-art {
+  background-color: var(--foreground);
+  -webkit-mask: url("/veg-banner.webp") center / contain no-repeat;
+  mask: url("/veg-banner.webp") center / contain no-repeat;
+}
+
+[data-palette="earth"] .sidebar-soil {
+  background-image: radial-gradient(rgba(255, 248, 241, 0.16) 0.6px, transparent 0.75px);
+  background-size: 4px 4px;
+}
+
+[data-palette="earth"] [data-testid="banner"] {
+  background-image: radial-gradient(rgba(90, 55, 30, 0.1) 0.55px, transparent 0.75px);
+  background-size: 5px 5px;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.farm-map .leaflet-container {
+  height: 100%;
+  width: 100%;
+  background: #d7c4a8;
+  font-family: var(--font-sans), sans-serif;
+  z-index: 0;
+}

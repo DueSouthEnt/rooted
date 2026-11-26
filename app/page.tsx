@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { APP_NAME, APP_TAGLINE, APP_WELCOME } from "@/lib/brand";
+import { APP_NAME, APP_WELCOME } from "@/lib/brand";
 import { BrandMark } from "@/components/brand-mark";
 import { Disclaimer } from "@/components/disclaimer";
 import { SignupForm } from "@/components/signup-form";
@@ -37,24 +37,32 @@ export default async function HomePage() {
 
       <main className="mx-auto flex max-w-5xl flex-col px-4 py-6 sm:px-6 sm:py-10">
         <section className="overflow-hidden rounded-[1.75rem] border border-border bg-[#f7f1e6] shadow-[0_24px_60px_-36px_rgba(44,64,52,0.55)]">
-          <div className="grid items-end bg-[linear-gradient(180deg,#f7f1e6_0%,#f3e6d4_70%,#e7d3bc_100%)] sm:grid-cols-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/floral-banner.webp"
-              alt=""
-              className="h-32 w-full object-cover object-left-bottom sm:h-52"
-            />
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/veg-banner.webp"
-              alt=""
-              className="h-32 w-full object-contain object-bottom sm:h-52"
-            />
+          <div className="bg-[linear-gradient(180deg,#f7f1e6_0%,#f3e6d4_70%,#e7d3bc_100%)] px-5 pt-8 sm:px-8 sm:pt-10">
+            <h1 className="font-heading text-center text-4xl leading-[1.05] tracking-tight sm:text-6xl">Plan your growing year</h1>
+            <div className="mt-6 grid grid-cols-1 sm:mt-8 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-end">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/floral-banner.webp"
+                alt=""
+                className="col-start-1 h-36 w-full object-cover object-left-bottom sm:h-56"
+              />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/veg-banner.webp"
+                alt=""
+                className="col-start-1 h-36 w-full object-contain object-bottom sm:col-start-3 sm:h-56"
+              />
+              <p className="font-heading col-start-1 mt-4 text-center text-5xl leading-none tracking-tight text-[#2c4034] sm:mt-3 sm:text-6xl">
+                Flowers
+              </p>
+              <p className="col-start-1 py-2 text-center text-lg text-[#6d645c] sm:col-start-2 sm:row-start-2 sm:px-5 sm:pb-2">and</p>
+              <p className="font-heading col-start-1 text-center text-5xl leading-none tracking-tight text-[#2c4034] sm:col-start-3 sm:row-start-2 sm:text-6xl">
+                Vegetables
+              </p>
+            </div>
           </div>
-          <div className="px-5 pt-2 pb-8 sm:px-8 sm:pb-10">
-            <p className="text-sm tracking-[0.18em] text-muted-foreground uppercase">Flowers and vegetables</p>
-            <h1 className="font-heading mt-3 max-w-3xl text-4xl leading-[1.05] tracking-tight sm:text-6xl">{APP_TAGLINE}</h1>
-            <p className="mt-4 max-w-2xl text-lg leading-relaxed text-[#4a433c]">{APP_WELCOME}</p>
+          <div className="px-5 pt-4 pb-8 sm:px-8 sm:pb-10">
+            <p className="mx-auto max-w-2xl text-center text-lg leading-relaxed text-[#4a433c]">{APP_WELCOME}</p>
           </div>
         </section>
 

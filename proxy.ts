@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { approvalDestination } from "@/lib/approval";
 import { gateRequest, requestOrigin } from "@/lib/access";
+import { homeForSections, normalizeSections } from "@/lib/sections";
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -29,6 +31,22 @@ export async function proxy(request: NextRequest) {
   });
 
   const { data } = await supabase.auth.getUser();
+  if (data.user) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("approved, is_admin, enabled_sections")
+      .eq("id", data.user.id)
+      .maybeSingle();
+    if (profile && typeof profile.approved === "boolean") {
+      const decision = approvalDestination(pathname, { approved: profile.approved, isAdmin: profile.is_admin === true });
+      if (decision !== "allow") {
+        const target = decision === "waiting" ? "/waiting" : homeForSections(normalizeSections(profile.enabled_sections));
+        const sent = NextResponse.redirect(new URL(target, requestOrigin(request)));
+        response.cookies.getAll().forEach((cookie) => sent.cookies.set(cookie));
+        return sent;
+      }
+    }
+  }
   const gate = gateRequest(pathname, Boolean(data.user));
   if (gate === "allow") return response;
 
