@@ -195,7 +195,14 @@ const server = createServer(async (req, res) => {
     if (!user) {
       return json(res, 406, { code: "PGRST116", message: "No rows" });
     }
-    const row = { id: user.id, display_name: user.displayName, units: "metric", enabled_sections: user.sections };
+    const row = {
+      id: user.id,
+      display_name: user.displayName,
+      units: "metric",
+      enabled_sections: user.sections,
+      approved: true,
+      is_admin: false,
+    };
     const accept = req.headers.accept ?? "";
     if (accept.includes("object+json")) return json(res, 200, row);
     return json(res, 200, [row]);

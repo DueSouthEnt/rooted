@@ -30,9 +30,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login?error=confirm", origin));
   }
 
-  const { data } = await supabase.from("profiles").select("enabled_sections").eq("id", exchanged.data.user.id).maybeSingle();
+  const { data } = await supabase.from("profiles").select("enabled_sections, approved").eq("id", exchanged.data.user.id).maybeSingle();
   const sections = normalizeSections(data?.enabled_sections);
-  const destination = safeNext(url.searchParams.get("next") ?? "", sections.length ? sections : ["flowers"]);
+  const destination = data?.approved === false
+    ? "/waiting"
+    : safeNext(url.searchParams.get("next") ?? "", sections.length ? sections : ["flowers"]);
   const forwarded = NextResponse.redirect(new URL(destination, origin));
   pending.forEach(({ name, value, options }) => {
     forwarded.cookies.set(name, value, options);

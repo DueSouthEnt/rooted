@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PageHeader } from "@/components/floral";
 import { enableSection, updateUnits } from "@/lib/actions";
 import { loadProfile } from "@/lib/records";
@@ -9,7 +10,7 @@ const LABEL: Record<Section, string> = {
 };
 
 export default async function SettingsPage() {
-  const { units, enabledSections } = await loadProfile();
+  const { units, enabledSections, isAdmin } = await loadProfile();
   const next = units === "metric" ? "imperial" : "metric";
   const missing = (["flowers", "veg"] as const).filter((section) => !enabledSections.includes(section));
   return (
@@ -41,6 +42,13 @@ export default async function SettingsPage() {
           </form>
         ))}
       </section>
+      {isAdmin ? (
+        <p className="text-sm">
+          <Link href="/admin" className="underline">
+            Approve new accounts
+          </Link>
+        </p>
+      ) : null}
     </div>
   );
 }

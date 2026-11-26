@@ -14,6 +14,7 @@ import type { BedRectangle, FarmBoundary, LngLat } from "@/lib/geo";
 import { destination, isBedRectangle, isFarmBoundary, toCentimetres } from "@/lib/geo";
 import { loadFarm, loadPlantings, loadProfile, requireUser, type FarmRecord, type PlantingRecord } from "@/lib/records";
 import { farmToSite } from "@/lib/records";
+import { notifyNewSignup } from "@/lib/notify";
 import { createClient } from "@/lib/supabase/server";
 import { generateTasks } from "@/lib/tasks";
 import { homeForSections, isSection, normalizeSections, safeNext, sectionsFromForm } from "@/lib/sections";
@@ -67,10 +68,11 @@ export async function signUp(_prev: ActionState, formData: FormData): Promise<Ac
     },
   });
   if (error) return { error: authError(error.message) };
+  await notifyNewSignup(email, sections);
   if (!data.session) {
     redirect(`/signup/confirm?email=${encodeURIComponent(email)}`);
   }
-  redirect(homeForSections(sections));
+  redirect("/waiting");
 }
 
 export async function signIn(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -83,7 +85,8 @@ export async function signIn(_prev: ActionState, formData: FormData): Promise<Ac
     if (lower.includes("confirm")) return { error: authError(error.message), confirmEmail: email };
     return { error: authError(error.message) };
   }
-  const { data: profile } = await supabase.from("profiles").select("enabled_sections").eq("id", data.user?.id ?? "").maybeSingle();
+  const { data: profile } = await supabase.from("profiles").select("enabled_sections, approved").eq("id", data.user?.id ?? "").maybeSingle();
+  if (profile?.approved === false) redirect("/waiting");
   const sections = normalizeSections(profile?.enabled_sections);
   const chosen = sections.length ? sections : (["flowers"] as const);
   redirect(safeNext(String(formData.get("next") ?? ""), chosen));
