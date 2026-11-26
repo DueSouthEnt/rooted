@@ -536,7 +536,7 @@ function persistPlantings(
   return { ok: true, data: { count: proposed.plantings.length } };
 }
 
-export function createPlantings(input: unknown): ActionResult<{ count: number }> {
+export async function createPlantings(input: unknown): Promise<ActionResult<{ count: number }>> {
   const parsed = planSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: firstIssue(parsed.error) };
   if (!parseISODate(parsed.data.anchorDate)) return { ok: false, error: "Choose a real date." };
@@ -546,6 +546,35 @@ export function createPlantings(input: unknown): ActionResult<{ count: number }>
   };
   const plan = buildPlan(request, loadCrops(), loadBeds(), existingOccupants());
   if (!plan.ok) return plan;
+  if (!parsed.data.acknowledgeOverlaps) {
+    const { createClient } = await import("@/lib/supabase/server");
+    const { clashOnBed, usesOnVegBeds } = await import("@/lib/shared-beds");
+    const supabase = await createClient();
+    const { data: auth } = await supabase.auth.getUser();
+    const { data: farms } = auth.user
+      ? await supabase.from("farms").select("id").eq("user_id", auth.user.id).order("created_at").limit(1)
+      : { data: [] };
+    const farmId = farms?.[0]?.id as string | undefined;
+    if (farmId) {
+      for (const planting of plan.plantings) {
+        const perBed = planting.bedIds.length > 0 ? planting.bedFeet / planting.bedIds.length / 3.280839895 : 0;
+        for (const bedId of planting.bedIds) {
+          const uses = await usesOnVegBeds(supabase, farmId, [bedId]);
+          const current = uses.get(bedId);
+          if (!current) continue;
+          const message = clashOnBed(current.name, current.lengthM, current.uses, {
+            id: planting.key,
+            kind: "veg",
+            label: `${planting.cropName} · ${planting.cultivar}`,
+            start: planting.schedule.fieldPlantingDate,
+            end: planting.schedule.lastHarvestDate,
+            lengthM: perBed > 0 ? perBed : current.lengthM,
+          });
+          if (message) return { ok: false, error: message };
+        }
+      }
+    }
+  }
   return persistPlantings(plan, parsed.data.seasonYear, parsed.data.acknowledgeOverlaps);
 }
 

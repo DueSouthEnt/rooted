@@ -82,7 +82,11 @@ export async function saveMapBlockAction(input: {
   bedCount?: number;
 }) {
   const result = await usingFarm(() => saveMapBlock(input));
-  if (result.ok) refresh();
+  if (result.ok) {
+    const { followVegBlock } = await import("@/lib/shared-beds");
+    await followVegBlock(result.data.id);
+    refresh();
+  }
   return result;
 }
 
@@ -216,6 +220,31 @@ export async function saveQuickPlantingAction(input: Parameters<typeof saveQuick
 }
 
 export async function assignPlantingBedsAction(plantingId: string, startBedId: string) {
+  const { sharedClashForVegBed } = await import("@/lib/shared-actions");
+  const { createClient } = await import("@/lib/supabase/server");
+  const supabase = await createClient();
+  const { data: auth } = await supabase.auth.getUser();
+  const { data: farms } = auth.user
+    ? await supabase.from("farms").select("id").eq("user_id", auth.user.id).order("created_at").limit(1)
+    : { data: [] };
+  const farmId = farms?.[0]?.id as string | undefined;
+  const { data: planting } = await supabase
+    .from("veg_plantings")
+    .select("field_planting_date, last_harvest_date, bed_feet, crop_id")
+    .eq("id", plantingId)
+    .maybeSingle();
+  if (farmId && planting) {
+    const message = await sharedClashForVegBed({
+      farmId,
+      vegBedId: startBedId,
+      start: planting.field_planting_date as string,
+      end: planting.last_harvest_date as string,
+      lengthM: Number(planting.bed_feet) > 0 ? Number(planting.bed_feet) / 3.280839895 : 0,
+      label: String(planting.crop_id),
+      ignoreId: plantingId,
+    });
+    if (message) return { ok: false as const, error: message };
+  }
   const result = await usingFarm(() => assignPlantingBeds(plantingId, startBedId));
   if (result.ok) refresh();
   return result;

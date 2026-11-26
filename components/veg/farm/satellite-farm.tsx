@@ -1571,6 +1571,9 @@ export function SatelliteFarm({
           <div>
             <p className="font-display text-lg leading-none">{gardenerBedName(selectedBed.block.name, selectedBed.bed.position)}</p>
             <p className="mt-1 text-xs text-muted-foreground">{selectedBed.block.name}</p>
+            {selectedBed.bed.sharedBedId ? (
+              <p className="mt-2 text-xs text-muted-foreground">Shared with the flower beds. One outline, both kinds of planting.</p>
+            ) : null}
           </div>
           <p className="text-sm">
             {selectedBed.current
