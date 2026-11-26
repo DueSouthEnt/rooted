@@ -35,6 +35,7 @@ function listBlocksSync(): BlockView[] {
         position: bed.position,
         length: bed.length,
         width: bed.width,
+        sharedBedId: bed.sharedBedId ?? null,
       })),
   }));
 }

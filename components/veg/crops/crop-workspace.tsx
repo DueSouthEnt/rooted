@@ -74,12 +74,14 @@ export function CropWorkspace({
   season = new Date().getUTCFullYear(),
   today = "",
   frostDates = null,
+  standardBedLengthM = 15,
 }: {
   crops: CropView[];
   blocks?: BlockView[];
   season?: number;
   today?: string;
   frostDates?: FrostContext | null;
+  standardBedLengthM?: number;
 }) {
   const [adding, setAdding] = useState(false);
   const [query, setQuery] = useState("");
@@ -178,7 +180,7 @@ export function CropWorkspace({
         season={season}
         today={today || new Date().toISOString().slice(0, 10)}
         frost={frostDates}
-        defaultBedLengthM={blocks[0] ? Math.round((blocks[0].unit === "ft" ? blocks[0].bedLength * 0.3048 : blocks[0].bedLength) * 10) / 10 : 30}
+        defaultBedLengthM={standardBedLengthM}
       />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <Input

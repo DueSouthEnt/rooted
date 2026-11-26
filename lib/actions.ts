@@ -8,6 +8,7 @@ import type { Flower } from "@/lib/flower";
 import { isRhsRating } from "@/lib/hardiness";
 import { packedSpanM, reflowBlock } from "@/lib/blocks";
 import { assignedBeds, freeBedIds, groundSpan } from "@/lib/occupancy";
+import { followFlowerOutline, sharedRoomForFlower } from "@/lib/shared-beds";
 import { successionWindows } from "@/lib/succession";
 import { isPlantingMethod, shiftDates, tasksForPlanting, type PlantingDates, type PlantingMethod } from "@/lib/schedule";
 import type { BedRectangle, FarmBoundary, LngLat } from "@/lib/geo";
@@ -415,8 +416,10 @@ export async function updateMappedBed(
     .eq("id", bedId)
     .eq("farm_id", farmId);
   if (error) return { error: "Couldn't update that bed." };
+  await followFlowerOutline(farmId, bedId, geometry);
   revalidatePath(`/flowers/farms/${farmId}/beds`);
   revalidatePath(`/flowers/farms/${farmId}/map`);
+  revalidatePath("/veg/farm");
   return { ok: true };
 }
 
@@ -771,6 +774,15 @@ export async function addPlanting(
     const end = occupiedEnd({ ...draft, flowerName: flower.commonName, flowerSlug: flower.slug, colour: flower.colour, variety: input.variety, nurseryStart: input.nurseryStart, bloomStart: input.bloomStart, firstBloomYear: input.firstBloomYear });
     const free = freeBedIds(dated, wanted, input.fieldDate, end);
     if (wanted.some((bedId) => !free.includes(bedId))) return { error: "One of those beds is already planted for the whole time this would be in the ground." };
+    const shared = await sharedRoomForFlower(supabase, farmId, wanted, {
+      id: "new-flower",
+      kind: "flower",
+      label: flower.commonName,
+      start: input.fieldDate,
+      end,
+      lengthM: input.bedLengthM && input.bedLengthM > 0 ? input.bedLengthM : 0,
+    });
+    if (shared) return { error: shared };
   }
   const { data, error } = await supabase
     .from("plantings")

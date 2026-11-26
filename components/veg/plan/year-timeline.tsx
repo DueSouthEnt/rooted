@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { assignPlantingBedsAction, clearPlantingBedsAction } from "@/app/veg/actions";
+import { assignPlantingBedsAction, clearPlantingBedsAction, shiftPlantingAction } from "@/app/veg/actions";
 import { ukCropName } from "@/lib/veg/crop-names";
 import { adviceForPlacement, badCompanionText, type AdviceNotice, type AdvicePlanting, type BedRef, type CompanionRule } from "@/lib/veg/advice";
 import { AddPlantingDialog } from "@/components/veg/plan/add-planting-dialog";
@@ -47,13 +47,14 @@ export function YearTimeline({
   season,
   today,
   frost,
-  initialGroup = "crop",
+  initialGroup = "bed",
   placeId = null,
   tasks = [],
   rules = [],
   spans = [],
   bedRefs = [],
   rotationYears = 3,
+  standardBedLengthM = 15,
 }: {
   crops: CropView[];
   blocks: BlockView[];
@@ -68,9 +69,10 @@ export function YearTimeline({
   spans?: AdvicePlanting[];
   bedRefs?: BedRef[];
   rotationYears?: number;
+  standardBedLengthM?: number;
 }) {
   const router = useRouter();
-  const [grouping, setGrouping] = useState<Grouping>(initialGroup);
+  const [grouping, setGrouping] = useState<Grouping>(initialGroup === "crop" ? "crop" : "bed");
   const [cropFilter, setCropFilter] = useState("All");
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -98,8 +100,6 @@ export function YearTimeline({
 
   const cropNames = ["All", ...Array.from(new Set(plantings.map((planting) => ukCropName(planting.cropName)))).sort()];
   const shown = plantings.filter((planting) => cropFilter === "All" || ukCropName(planting.cropName) === cropFilter);
-  const unassigned = shown.filter((planting) => planting.beds.length === 0);
-  const placed = shown.filter((planting) => planting.beds.length > 0);
   const slots: BedSlot[] = blocks.flatMap((block) =>
     block.beds.map((bed) => ({
       id: bed.id,
@@ -109,6 +109,9 @@ export function YearTimeline({
       position: bed.position,
     })),
   );
+  const knownBeds = new Set(slots.map((bed) => bed.id));
+  const placed = shown.filter((planting) => planting.beds.some((bed) => knownBeds.has(bed.id)));
+  const unassigned = shown.filter((planting) => !planting.beds.some((bed) => knownBeds.has(bed.id)));
   const occupancy: BedOccupancy[] = plantings.flatMap((planting) =>
     planting.beds.map((bed) => ({
       plantingId: planting.id,
@@ -118,7 +121,6 @@ export function YearTimeline({
       end: planting.lastHarvestDate,
     })),
   );
-  const defaultLength = blocks[0] ? (blocks[0].unit === "ft" ? blocks[0].bedLength * 0.3048 : blocks[0].bedLength) : 30;
   const todayLeft = parseISODate(today) && today.startsWith(String(season)) ? (dayOffset(today, season) / days) * 100 : null;
 
   function paint(plantingId: string | null) {
@@ -170,6 +172,16 @@ export function YearTimeline({
       beds: bedRefs,
       rules,
     });
+  }
+
+  async function shiftBy(plantingId: string, delta: number) {
+    if (!delta) return;
+    const result = await shiftPlantingAction(plantingId, delta);
+    if (!result.ok) setMessage(result.error);
+    else {
+      setMessage(null);
+      router.refresh();
+    }
   }
 
   async function dropOn(plantingId: string, bedId: string) {
@@ -336,6 +348,7 @@ export function YearTimeline({
                   }}
                   onDragMove={dragMove}
                   onDrop={dragDrop}
+                  onShift={(id, delta) => void shiftBy(id, delta)}
                 />
               ) : null}
               {grouping === "bed" ? (
@@ -353,6 +366,7 @@ export function YearTimeline({
                   }}
                   onDragMove={dragMove}
                   onDrop={dragDrop}
+                  onShift={(id, delta) => void shiftBy(id, delta)}
                 />
               ) : null}
             </div>
@@ -392,7 +406,7 @@ export function YearTimeline({
         season={season}
         today={today}
         frost={frost}
-        defaultBedLengthM={Math.round(defaultLength * 10) / 10}
+        defaultBedLengthM={standardBedLengthM}
         rules={rules}
         spans={spans}
         bedRefs={bedRefs}
@@ -410,6 +424,7 @@ function Bar({
   onDragStart,
   onDragMove,
   onDrop,
+  onShift,
 }: {
   planting: PlantingView;
   season: number;
@@ -418,8 +433,10 @@ function Bar({
   onDragStart: (id: string) => void;
   onDragMove: (planting: PlantingView, x: number, y: number) => void;
   onDrop: (id: string, x: number, y: number) => void;
+  onShift: (id: string, days: number) => void;
 }) {
   const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  const slide = useRef<HTMLDivElement>(null);
   const nursery = planting.nurseryStartDate
     ? clampBar(planting.nurseryStartDate, addDaysSafe(planting.fieldPlantingDate, -1), season)
     : null;
@@ -440,18 +457,36 @@ function Bar({
       onPointerMove={(event) => {
         const current = drag.current;
         if (!current) return;
-        if (!current.moved && Math.hypot(event.clientX - current.x, event.clientY - current.y) < 8) return;
+        const dx = event.clientX - current.x;
+        const dy = event.clientY - current.y;
+        if (!current.moved && Math.hypot(dx, dy) < 8) return;
         if (!current.moved) {
           current.moved = true;
           onDragStart(planting.id);
         }
         onDragMove(planting, event.clientX, event.clientY);
+        const width = event.currentTarget.getBoundingClientRect().width || 1;
+        const days = Math.round((dx / width) * yearLength(season));
+        if (slide.current && Math.abs(dx) > Math.abs(dy)) slide.current.style.transform = `translateX(${(days / yearLength(season)) * 100}%)`;
       }}
       onPointerUp={(event) => {
         const current = drag.current;
         drag.current = null;
+        if (slide.current) slide.current.style.transform = "";
         if (!current) return;
-        if (!current.moved) onEdit(planting.id);
+        if (!current.moved) {
+          onEdit(planting.id);
+          return;
+        }
+        const hit = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-bed-id]");
+        const staying = planting.beds.some((bed) => bed.id === hit?.dataset.bedId);
+        if (hit?.dataset.bedId && !staying) {
+          onDrop(planting.id, event.clientX, event.clientY);
+          return;
+        }
+        const width = event.currentTarget.getBoundingClientRect().width || 1;
+        const days = Math.round(((event.clientX - current.x) / width) * yearLength(season));
+        if (Math.abs(event.clientX - current.x) > Math.abs(event.clientY - current.y) && Math.abs(days) >= 1) onShift(planting.id, days);
         else onDrop(planting.id, event.clientX, event.clientY);
       }}
       onPointerCancel={() => {
@@ -466,9 +501,11 @@ function Bar({
         }
       }}
     >
+      <div ref={slide} className="absolute inset-0">
       {nursery ? <span className="pointer-events-none absolute top-1 h-5 rounded-l-md bg-[#E4EDD4]" style={{ left: `${nursery.left}%`, width: `${nursery.width}%` }} /> : null}
       {growing ? <span className="pointer-events-none absolute top-1 h-5 bg-[#E2B15A]" style={{ left: `${growing.left}%`, width: `${growing.width}%` }} /> : null}
       {harvest ? <span className="pointer-events-none absolute top-1 h-5 rounded-r-md bg-[#8C3B2A]" style={{ left: `${harvest.left}%`, width: `${harvest.width}%` }} /> : null}
+      </div>
       {warning ? (
         <span
           data-testid={`companion-warn-${planting.id}`}
@@ -499,6 +536,7 @@ function CropRows({
   onDragStart,
   onDragMove,
   onDrop,
+  onShift,
 }: {
   plantings: PlantingView[];
   season: number;
@@ -507,6 +545,7 @@ function CropRows({
   onDragStart: (id: string) => void;
   onDragMove: (planting: PlantingView, x: number, y: number) => void;
   onDrop: (id: string, x: number, y: number) => void;
+  onShift: (id: string, days: number) => void;
 }) {
   const groups = new Map<string, PlantingView[]>();
   for (const planting of plantings) {
@@ -531,7 +570,7 @@ function CropRows({
                   {planting.beds.map((bed) => bed.label).join(", ") || "No bed"}
                 </span>
               </button>
-              <Bar planting={planting} season={season} warning={warningFor(planting)} onEdit={onEdit} onDragStart={onDragStart} onDragMove={onDragMove} onDrop={onDrop} />
+              <Bar planting={planting} season={season} warning={warningFor(planting)} onEdit={onEdit} onDragStart={onDragStart} onDragMove={onDragMove} onDrop={onDrop} onShift={onShift} />
             </div>
           ))}
         </div>
@@ -587,6 +626,7 @@ function BedRows({
   onDragStart,
   onDragMove,
   onDrop,
+  onShift,
 }: {
   blocks: BlockView[];
   plantings: PlantingView[];
@@ -598,9 +638,11 @@ function BedRows({
   onDragStart: (id: string) => void;
   onDragMove: (planting: PlantingView, x: number, y: number) => void;
   onDrop: (id: string, x: number, y: number) => void;
+  onShift: (id: string, days: number) => void;
 }) {
   return (
     <div data-testid="bed-view">
+      {blocks.length === 0 ? <p className="px-3 py-6 text-sm text-muted-foreground">Draw beds on the farm map, then they line up here.</p> : null}
       {blocks.map((block) => (
         <div key={block.id}>
           <div className="grid grid-cols-[180px_minmax(0,1fr)] bg-muted/40">
@@ -617,13 +659,13 @@ function BedRows({
                 className={cn("grid grid-cols-[180px_minmax(0,1fr)] border-t")}
               >
                 <div className="px-3 py-2 text-sm">
-                  <span className="block">{bed.label}</span>
+                  <span className="block">{bed.label}{bed.sharedBedId ? " · Shared" : ""}</span>
                   <span className="text-xs text-muted-foreground">{rows.map((planting) => ukCropName(planting.cropName)).join(", ") || "Empty"}</span>
                   <BedHistory bedId={bed.id} season={season} spans={spans} years={rotationYears} />
                 </div>
                 <div className="relative min-h-9">
                   {rows.map((planting) => (
-                    <Bar key={planting.id} planting={planting} season={season} warning={warningFor(planting)} onEdit={onEdit} onDragStart={onDragStart} onDragMove={onDragMove} onDrop={onDrop} />
+                    <Bar key={planting.id} planting={planting} season={season} warning={warningFor(planting)} onEdit={onEdit} onDragStart={onDragStart} onDragMove={onDragMove} onDrop={onDrop} onShift={onShift} />
                   ))}
                 </div>
               </div>

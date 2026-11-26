@@ -39,6 +39,7 @@ import {
   ringAreaM2,
   ringContains,
   rotateMetres,
+  spanWidthForCount,
   toMetres,
   unrotateMetres,
   type LatLng,
@@ -217,6 +218,7 @@ export function SatelliteFarm({
   season = new Date().getUTCFullYear(),
   today = "",
   tasks = [],
+  standardBedLengthM = 15,
 }: {
   tiles: MapTiles;
   areas: FarmAreaView[];
@@ -228,6 +230,7 @@ export function SatelliteFarm({
   season?: number;
   today?: string;
   tasks?: TaskView[];
+  standardBedLengthM?: number;
 }) {
   const router = useRouter();
   const mapEl = useRef<HTMLDivElement>(null);
@@ -978,7 +981,7 @@ export function SatelliteFarm({
 
   apiRef.current = { saveOutline, commitDrawn, commitGeometry, removeBlock, removeArea };
 
-  async function commitFields(patch: Partial<Setup & { bedCount: number; spanLengthM: number }>) {
+  async function commitFields(patch: Partial<Setup & { bedCount: number; spanLengthM: number; spanWidthM: number }>) {
     const block = blocks.find((item) => item.id === selectedId);
     if (!block || block.centerLat == null || block.centerLng == null || block.spanLengthM == null || block.spanWidthM == null) return;
     const unit = patch.unit ?? block.unit;
@@ -986,7 +989,18 @@ export function SatelliteFarm({
     const bedWidth = patch.bedWidth ?? block.bedWidth;
     const pathWidth = patch.pathWidth ?? block.pathWidth;
     const rotationDeg = patch.rotation ?? block.rotationDeg ?? 0;
-    const spanLengthM = patch.spanLengthM ?? block.spanLengthM;
+    const dimensions = patch.bedLength != null || patch.bedWidth != null || patch.pathWidth != null || patch.bedCount != null || patch.spanLengthM != null;
+    const spanLengthM = patch.spanLengthM ?? (dimensions ? bedLength : block.spanLengthM);
+    const bedCount = Math.max(1, patch.bedCount ?? (block.beds.length || 1));
+    const spanWidthM = patch.spanWidthM ?? (dimensions ? spanWidthForCount(bedCount, bedWidth, pathWidth, unit) : block.spanWidthM);
+    const centerLat = override?.id === block.id ? override.centerLat : block.centerLat;
+    const centerLng = override?.id === block.id ? override.centerLng : block.centerLng;
+    setBlocks((current) =>
+      current.map((item) =>
+        item.id === block.id ? { ...item, unit, bedLength, bedWidth, pathWidth, spanLengthM, spanWidthM, rotationDeg } : item,
+      ),
+    );
+    setOverride({ id: block.id, centerLat, centerLng, rotationDeg, spanLengthM, spanWidthM });
     const result = await saveMapBlockAction({
       id: block.id,
       farmAreaId: block.farmAreaId,
@@ -996,11 +1010,11 @@ export function SatelliteFarm({
       bedLength,
       bedWidth,
       pathWidth,
-      centerLat: override?.id === block.id ? override.centerLat : block.centerLat,
-      centerLng: override?.id === block.id ? override.centerLng : block.centerLng,
+      centerLat,
+      centerLng,
       rotationDeg,
       spanLengthM,
-      spanWidthM: block.spanWidthM,
+      spanWidthM,
       bedCount: patch.bedCount,
     });
     if (!result.ok) {
@@ -1571,6 +1585,9 @@ export function SatelliteFarm({
           <div>
             <p className="font-display text-lg leading-none">{gardenerBedName(selectedBed.block.name, selectedBed.bed.position)}</p>
             <p className="mt-1 text-xs text-muted-foreground">{selectedBed.block.name}</p>
+            {selectedBed.bed.sharedBedId ? (
+              <p className="mt-2 text-xs text-muted-foreground">Shared with the flower beds. One outline, both kinds of planting.</p>
+            ) : null}
           </div>
           <p className="text-sm">
             {selectedBed.current
@@ -1725,7 +1742,7 @@ export function SatelliteFarm({
         season={season}
         today={today || watchDate}
         frost={frost}
-        defaultBedLengthM={30}
+        defaultBedLengthM={standardBedLengthM}
       />
     </div>
   );
@@ -1836,6 +1853,9 @@ function NumberField({
             return;
           }
           onChange(next);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
         }}
       />
     </label>

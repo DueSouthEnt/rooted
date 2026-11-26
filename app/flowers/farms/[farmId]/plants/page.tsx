@@ -1,5 +1,6 @@
 import { PlantsBoard } from "@/components/plants-board";
 import { toPlantingDates } from "@/lib/plan-view";
+import { readStandardBedLength } from "@/lib/veg/standard-length";
 import { loadFarm, loadPlantings } from "@/lib/records";
 
 export default async function PlantsPage({ params }: { params: Promise<{ farmId: string }> }) {
@@ -18,6 +19,7 @@ export default async function PlantsPage({ params }: { params: Promise<{ farmId:
       site={loaded.site}
       season={loaded.farm.season_year}
       bedNames={Object.fromEntries(loaded.beds.map((bed) => [bed.id, bed.name]))}
+      defaultBedLengthM={await readStandardBedLength(farmId)}
     />
   );
 }

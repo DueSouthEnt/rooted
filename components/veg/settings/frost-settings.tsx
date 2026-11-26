@@ -2,7 +2,8 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { saveFrostSettingsAction, saveRotationYearsAction } from "@/app/veg/actions";
+import { saveFrostSettingsAction, saveRotationYearsAction, saveStandardBedLengthAction } from "@/app/veg/actions";
+import { displayOfMetres, matchingPreset, metresFromDisplay } from "@/lib/veg/bed-length";
 import { controlClass, Field } from "@/components/veg/field";
 import { PageHeader } from "@/components/veg/page-header";
 import { Button } from "@/components/veg/ui/button";
@@ -17,6 +18,8 @@ export function FrostSettings({
   manualFirst,
   useManual,
   rotationYears,
+  standardBedLengthM,
+  displayUnit,
 }: {
   locations: FrostLocation[];
   currentLabel: string;
@@ -25,6 +28,8 @@ export function FrostSettings({
   manualFirst: string | null;
   useManual: boolean;
   rotationYears: number;
+  standardBedLengthM: number;
+  displayUnit: "m" | "ft";
 }) {
   const [query, setQuery] = useState("");
   const [chosen, setChosen] = useState<string | null>(currentLocationId);
@@ -34,6 +39,10 @@ export function FrostSettings({
   const [firstFrost, setFirstFrost] = useState(manualFirst ?? "11-01");
   const [pending, startTransition] = useTransition();
   const [seasonsBack, setSeasonsBack] = useState(rotationYears);
+  const [bedMetres, setBedMetres] = useState(standardBedLengthM);
+  const preset = matchingPreset(bedMetres);
+  const shownLength =
+    displayUnit === "ft" && preset === 15 ? 50 : displayUnit === "ft" && preset === 30 ? 100 : Math.round(displayOfMetres(bedMetres, displayUnit) * 10) / 10;
   const direct = useMemo(() => (query.trim() ? matchPlace(query, locations) : null), [query, locations]);
   const listed = useMemo(() => searchPlaces(query, locations).slice(0, 12), [query, locations]);
   const selected = locations.find((place) => place.id === chosen) ?? null;
@@ -164,6 +173,47 @@ export function FrostSettings({
                 const result = await saveRotationYearsAction(seasonsBack);
                 if (!result.ok) toast.error(result.error);
                 else toast.success("Rotation look-back saved.");
+              });
+            }}
+          >
+            Save
+          </Button>
+        </div>
+      </section>
+      <section className="max-w-xl rounded-2xl border bg-card p-5" data-testid="bed-length-setting">
+        <h2 className="font-display text-2xl">Usual bed length</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          New plantings start at this length. You can still change the length on each planting. Lengths are stored in metres.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button type="button" variant={preset === 15 ? "default" : "outline"} onClick={() => setBedMetres(15)}>
+            {displayUnit === "ft" ? "50 ft" : "15 m"}
+          </Button>
+          <Button type="button" variant={preset === 30 ? "default" : "outline"} onClick={() => setBedMetres(30)}>
+            {displayUnit === "ft" ? "100 ft" : "30 m"}
+          </Button>
+        </div>
+        <div className="mt-3 flex items-end gap-2">
+          <Field label={displayUnit === "ft" ? "Custom length (ft)" : "Custom length (m)"}>
+            <input
+              className={`${controlClass} num max-w-28`}
+              type="number"
+              min={0.4}
+              step={0.1}
+              data-testid="custom-bed-length"
+              value={shownLength}
+              aria-label="Usual bed length"
+              onChange={(event) => setBedMetres(metresFromDisplay(Number(event.target.value), displayUnit))}
+            />
+          </Field>
+          <Button
+            type="button"
+            disabled={pending}
+            onClick={() => {
+              startTransition(async () => {
+                const result = await saveStandardBedLengthAction(bedMetres);
+                if (!result.ok) toast.error(result.error);
+                else toast.success("Usual bed length saved.");
               });
             }}
           >

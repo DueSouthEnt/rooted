@@ -368,13 +368,13 @@ export async function readFarm<T>(fn: () => T, empty: T): Promise<T> {
   }
 }
 
-export async function usingFarm<T>(fn: () => T): Promise<T> {
+export async function usingFarm<T>(fn: () => T | Promise<T>): Promise<Awaited<T>> {
   const opened = await FarmMemory.open();
-  if ("error" in opened) return { ok: false, error: opened.error } as T;
+  if ("error" in opened) return { ok: false, error: opened.error } as Awaited<T>;
   const supabase = await createClient();
   active = opened;
   try {
-    const result = fn();
+    const result = await fn();
     await opened.flush(supabase);
     return result;
   } finally {

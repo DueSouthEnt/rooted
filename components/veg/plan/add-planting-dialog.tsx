@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import { clearPlantingBedsAction, deletePlantingAction, saveQuickPlantingAction, saveUserVarietyAction } from "@/app/veg/actions";
@@ -10,6 +10,7 @@ import { Button } from "@/components/veg/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/veg/ui/dialog";
 import { Input } from "@/components/veg/ui/input";
 import { Textarea } from "@/components/veg/ui/textarea";
+import { displayOfMetres, metresFromDisplay } from "@/lib/veg/bed-length";
 import { addDaysISO, formatMedium } from "@/lib/veg/dates";
 import { plantingFrostWarnings } from "@/lib/veg/frost";
 import type { FrostContext } from "@/lib/veg/queries";
@@ -101,6 +102,8 @@ export function AddPlantingDialog({
   const [windowUnit, setWindowUnit] = useState<HarvestWindowUnit>("days");
   const [manualLast, setManualLast] = useState<string | null>(editing?.lastHarvestDate ?? null);
   const [bedCount, setBedCount] = useState(editing?.bedsNeeded ?? 1);
+  const [lengthM, setLengthM] = useState(editing?.bedLengthM && editing.bedLengthM > 0 ? editing.bedLengthM : defaultBedLengthM);
+  const [displayUnit, setDisplayUnit] = useState<"m" | "ft">("m");
   const [rows, setRows] = useState(editing?.rowsPerBed ?? 3);
   const [spacingCm, setSpacingCm] = useState(editing?.inRowSpacingCm ?? 15);
   const [notes, setNotes] = useState(editing?.notes ?? "");
@@ -112,6 +115,15 @@ export function AddPlantingDialog({
   const [error, setError] = useState<string | null>(null);
   const [extra, setExtra] = useState<CropView | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("veg-display-unit");
+      if (saved === "ft" || saved === "m") setDisplayUnit(saved);
+    } catch {
+      // Metres stay on screen.
+    }
+  }, []);
 
   const varieties = extra ? [extra, ...crops.filter((crop) => crop.id !== extra.id)] : crops;
   const selected = varieties.find((crop) => crop.id === cropId) ?? null;
@@ -140,9 +152,7 @@ export function AddPlantingDialog({
     }
   }, [method, nurserySow, daysInNursery, fieldDate, daysToMaturity, windowAmount, windowUnit, manualField, manualFirst, manualLast]);
 
-  const assignedLengths = (editing?.beds ?? []).map((bed) => (bed.unit === "ft" ? bed.length * 0.3048 : bed.length));
-  const bedLengthM = assignedLengths[0] || editing?.bedLengthM || defaultBedLengthM;
-  const plantPhrase = plantCountPhrase(assignedLengths, rows, spacingCm, defaultBedLengthM);
+  const plantPhrase = plantCountPhrase([lengthM], rows, spacingCm, lengthM);
   const warnings =
     dates && selected
       ? plantingFrostWarnings({
@@ -245,7 +255,7 @@ export function AddPlantingDialog({
       manualFirstHarvest: manualFirst,
       manualLastHarvest: manualLast,
       bedCount,
-      bedLengthM,
+      bedLengthM: lengthM,
       rowsPerBed: rows,
       spacingCm,
       expectedHarvest: harvestAmount.trim() ? Number(harvestAmount) : null,
@@ -456,6 +466,16 @@ export function AddPlantingDialog({
           ) : null}
 
           <div className="grid gap-3 sm:grid-cols-2">
+            <Field label={displayUnit === "ft" ? "Bed length (ft)" : "Bed length (m)"} hint="How much of the bed this planting uses. It can be shorter than the bed.">
+              <Input
+                data-testid="planting-length"
+                type="number"
+                min={0.4}
+                step={0.1}
+                value={Math.round(displayOfMetres(lengthM, displayUnit) * 10) / 10}
+                onChange={(event) => setLengthM(metresFromDisplay(Number(event.target.value), displayUnit))}
+              />
+            </Field>
             <Field label="Number of beds">
               <Input type="number" min={1} value={bedCount} onChange={(event) => setBedCount(Number(event.target.value))} />
             </Field>

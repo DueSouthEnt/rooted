@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { BedBoard } from "@/components/bed-board";
 import { PageHeader } from "@/components/floral";
+import { SharedBedBoard } from "@/components/shared-bed-board";
+import { loadSharedBoard } from "@/lib/shared-beds";
 import { loadFarm, loadProfile } from "@/lib/records";
 
 export default async function BedsPage({ params }: { params: Promise<{ farmId: string }> }) {
@@ -18,6 +20,9 @@ export default async function BedsPage({ params }: { params: Promise<{ farmId: s
         title="Beds"
         lede={`Tall plants on the ${site?.hemisphere === "south" ? "south" : "north"} side. Perennials stay in a bed you won't dig up for a row of calendula.`}
       />
+      {profile.enabledSections.includes("flowers") && profile.enabledSections.includes("veg") ? (
+        <SharedBeds farmId={farm.id} />
+      ) : null}
       <p className="text-sm text-muted-foreground">
         Beds drawn on the{" "}
         <Link href={`/flowers/farms/${farm.id}/map`} className="underline">
@@ -37,4 +42,10 @@ export default async function BedsPage({ params }: { params: Promise<{ farmId: s
       <BedBoard farm={farm} site={site} beds={beds} plants={plants} flowers={planned} units={profile.units} />
     </div>
   );
+}
+
+async function SharedBeds({ farmId }: { farmId: string }) {
+  const board = await loadSharedBoard(farmId);
+  if (!board) return null;
+  return <SharedBedBoard farmId={farmId} {...board} />;
 }

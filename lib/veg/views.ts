@@ -15,6 +15,7 @@ export type BedView = {
   position: number;
   length: number;
   width: number;
+  sharedBedId?: string | null;
 };
 
 export type BlockView = {
