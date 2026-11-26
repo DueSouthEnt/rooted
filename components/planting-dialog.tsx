@@ -23,6 +23,7 @@ export function PlantingDialog({
   successionCount = 1,
   onDeleted,
   onUnplaced,
+  defaultBedLengthM = 15,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -34,6 +35,7 @@ export function PlantingDialog({
   successionCount?: number;
   onDeleted?: (ids: string[]) => void;
   onUnplaced?: (id: string) => void;
+  defaultBedLengthM?: number;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -55,6 +57,7 @@ export function PlantingDialog({
             successionCount={successionCount}
             onDeleted={onDeleted}
             onUnplaced={onUnplaced}
+            defaultBedLengthM={defaultBedLengthM}
             onDone={() => onOpenChange(false)}
           />
         ) : null}
@@ -73,6 +76,7 @@ function PlantingForm({
   onDeleted,
   onUnplaced,
   onDone,
+  defaultBedLengthM,
 }: {
   farmId: string;
   flowers: Flower[];
@@ -82,6 +86,7 @@ function PlantingForm({
   successionCount: number;
   onDeleted?: (ids: string[]) => void;
   onUnplaced?: (id: string) => void;
+  defaultBedLengthM: number;
   onDone: () => void;
 }) {
   const router = useRouter();
@@ -98,7 +103,7 @@ function PlantingForm({
   const [bloomWeeks, setBloomWeeks] = useState(editing?.bloomWeeks ?? (editing ? Math.max(1, Math.round((diffDays(editing.bloomStart, editing.bloomEnd) + 1) / 7)) : initial?.bloomWeeks ?? 8));
   const [endLock, setEndLock] = useState<string | null>(editing?.bloomEnd ?? null);
   const [bedsNeeded, setBedsNeeded] = useState(editing?.bedsNeeded ?? 1);
-  const [bedLengthM, setBedLengthM] = useState(editing?.bedLengthM ?? 4);
+  const [bedLengthM, setBedLengthM] = useState(editing?.bedLengthM ?? defaultBedLengthM);
   const [spacingCm, setSpacingCm] = useState(editing?.spacingCm ?? initial?.spacingCm ?? 25);
   const [notes, setNotes] = useState(editing?.notes ?? "");
   const [successions, setSuccessions] = useState(1);

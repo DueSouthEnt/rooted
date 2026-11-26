@@ -14,6 +14,7 @@ export function PlantsBoard({
   site,
   season,
   bedNames,
+  defaultBedLengthM = 15,
 }: {
   farmId: string;
   plantings: PlantingDates[];
@@ -21,6 +22,7 @@ export function PlantsBoard({
   site: SitePlan | null;
   season: number;
   bedNames: Record<string, string>;
+  defaultBedLengthM?: number;
 }) {
   const [dialog, setDialog] = useState<PlantingDates | null | "new">(null);
   return (
@@ -64,6 +66,7 @@ export function PlantsBoard({
         flowers={flowers}
         site={site}
         season={season}
+        defaultBedLengthM={defaultBedLengthM}
         editing={dialog && dialog !== "new" ? dialog : null}
         successionCount={
           dialog && dialog !== "new" && dialog.successionGroup

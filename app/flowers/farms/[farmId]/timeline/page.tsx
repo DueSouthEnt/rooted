@@ -2,6 +2,7 @@ import { YearTimeline } from "@/components/year-timeline";
 import { diffDays, todayISO } from "@/lib/dates";
 import { toPlantingDates } from "@/lib/plan-view";
 import { recommend } from "@/lib/recommend";
+import { readStandardBedLength } from "@/lib/veg/standard-length";
 import { loadFarm, loadPlantings } from "@/lib/records";
 import { scheduleFlower, sowNow } from "@/lib/schedule";
 
@@ -40,6 +41,7 @@ export default async function TimelinePage({ params }: { params: Promise<{ farmI
       flowers={loaded.flowers}
       site={loaded.site}
       season={loaded.farm.season_year}
+      defaultBedLengthM={await readStandardBedLength(farmId)}
       today={todayISO()}
       lastSpring={
         loaded.farm.last_spring_month && loaded.farm.last_spring_day

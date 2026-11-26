@@ -2,7 +2,8 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { CropWorkspace } from "@/components/veg/crops/crop-workspace";
 import { todayISO } from "@/lib/veg/dates";
-import { getFrostContext, listBlocks, listCrops } from "@/lib/veg/queries";
+import { standardBedLengthMetres } from "@/lib/veg/bed-length";
+import { getFarmSettings, getFrostContext, listBlocks, listCrops } from "@/lib/veg/queries";
 import { getSeason } from "@/lib/veg/season";
 import Loading from "../loading";
 
@@ -25,6 +26,7 @@ async function CropsContent() {
       season={await getSeason()}
       today={todayISO()}
       frostDates={await getFrostContext()}
+      standardBedLengthM={standardBedLengthMetres((await getFarmSettings())?.standardBedLengthM)}
     />
   );
 }

@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import { FarmMapLoader } from "@/components/veg/farm/farm-map-loader";
 import { todayISO } from "@/lib/veg/dates";
 import { resolveMapTiles } from "@/lib/veg/map-tiles";
+import { standardBedLengthMetres } from "@/lib/veg/bed-length";
 import { readDisplayUnit } from "@/lib/veg/display-unit";
 import { getFarmSettings, getFrostContext, listBlocks, listCrops, listFarmAreas, listPlantings, listTasks } from "@/lib/veg/queries";
 import { getSeason } from "@/lib/veg/season";
@@ -33,6 +34,7 @@ async function FarmContent() {
       season={season}
       today={todayISO()}
       tasks={await listTasks()}
+      standardBedLengthM={standardBedLengthMetres(settings?.standardBedLengthM)}
       settings={{
         locationLabel: settings?.locationLabel ?? "",
         frostLocationId: settings?.frostLocationId ?? null,

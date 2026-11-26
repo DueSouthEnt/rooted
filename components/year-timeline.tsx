@@ -24,6 +24,7 @@ export function YearTimeline({
   today,
   lastSpring,
   firstAutumn,
+  defaultBedLengthM = 15,
 }: {
   farmId: string;
   plantings: PlantingDates[];
@@ -36,6 +37,7 @@ export function YearTimeline({
   today: string;
   lastSpring: string | null;
   firstAutumn: string | null;
+  defaultBedLengthM?: number;
 }) {
   const router = useRouter();
   const gridRef = useRef<HTMLDivElement>(null);
@@ -493,6 +495,7 @@ export function YearTimeline({
         flowers={flowers}
         site={site}
         season={season}
+        defaultBedLengthM={defaultBedLengthM}
         editing={dialog && dialog !== "new" ? dialog : null}
         successionCount={
           dialog && dialog !== "new" && dialog.successionGroup

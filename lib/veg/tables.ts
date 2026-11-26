@@ -145,6 +145,7 @@ export const farmSettings = table(
     manualFirstAutumnFrost: "manual_first_autumn_frost",
     useManualFrost: "use_manual_frost",
     rotationYears: "rotation_years",
+    standardBedLengthM: "standard_bed_length_m",
   },
   bool,
 );

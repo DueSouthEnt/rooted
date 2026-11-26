@@ -28,6 +28,8 @@ import {
   saveQuickPlanting,
   saveUserVariety,
   saveRotationYears,
+  saveStandardBedLength,
+  shiftPlanting,
   saveRotationFamily,
   saveCompanion,
   deleteCompanion,
@@ -258,6 +260,18 @@ export async function clearPlantingBedsAction(plantingId: string) {
 
 export async function saveRotationYearsAction(years: number) {
   const result = await usingFarm(() => saveRotationYears(years));
+  if (result.ok) refresh();
+  return result;
+}
+
+export async function saveStandardBedLengthAction(metres: number) {
+  const result = await usingFarm(() => saveStandardBedLength(metres));
+  if (result.ok) refresh();
+  return result;
+}
+
+export async function shiftPlantingAction(id: string, days: number) {
+  const result = await usingFarm(() => shiftPlanting(id, days));
   if (result.ok) refresh();
   return result;
 }

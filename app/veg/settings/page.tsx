@@ -1,6 +1,8 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { FrostSettings } from "@/components/veg/settings/frost-settings";
+import { standardBedLengthMetres } from "@/lib/veg/bed-length";
+import { readDisplayUnit } from "@/lib/veg/display-unit";
 import { getFarmSettings, listFrostLocations, rotationYearSetting } from "@/lib/veg/queries";
 import { FROST_LOCATIONS, type FrostLocation } from "@/lib/veg/seed/frost-locations";
 import Loading from "../loading";
@@ -42,6 +44,8 @@ async function SettingsContent() {
       manualFirst={saved?.manualFirstAutumnFrost ?? null}
       useManual={saved?.useManualFrost === 1}
       rotationYears={await rotationYearSetting()}
+      standardBedLengthM={standardBedLengthMetres(saved?.standardBedLengthM)}
+      displayUnit={await readDisplayUnit()}
     />
   );
 }

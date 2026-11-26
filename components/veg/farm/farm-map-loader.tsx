@@ -33,6 +33,7 @@ export function FarmMapLoader(props: {
   season: number;
   today: string;
   tasks?: TaskView[];
+  standardBedLengthM?: number;
 }) {
   return <SatelliteFarm {...props} />;
 }

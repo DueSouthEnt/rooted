@@ -9,6 +9,7 @@ import {
   rectangleRing,
   ringAreaM2,
   spanWidthForCount,
+  toMetres,
   type LatLng,
 } from "@/lib/veg/bed-layout";
 import { addDaysISO, parseISODate } from "@/lib/veg/dates";
@@ -16,6 +17,7 @@ import { TASK_TYPE_CHOICES } from "@/lib/veg/labels";
 import { repeatDates, slugTaskType } from "@/lib/veg/repeat";
 import { gardenerBedName } from "@/lib/veg/bed-name";
 import { assignBeds, basicPlantingTasks, composePlantingDates, type BedOccupancy, type BedSlot, type HarvestWindowUnit } from "@/lib/veg/planting-form";
+import { lengthClashMessage, plantingFitsBed, shiftIsoDate } from "@/lib/veg/bed-length";
 import { toFeet } from "@/lib/veg/units";
 import {
   blockCode,
@@ -1173,6 +1175,11 @@ export function saveQuickPlanting(input: {
     if (!current) return { ok: false, error: "That planting is no longer on the plan." };
     const held = db.select().from(plantingBeds).where(eq(plantingBeds.plantingId, input.id)).all();
     for (const link of held) {
+      const bed = db.select().from(beds).where(eq(beds.id, link.bedId)).get();
+      const block = bed ? db.select().from(blocks).where(eq(blocks.id, bed.blockId)).get() : null;
+      if (bed && block && !plantingFitsBed(input.bedLengthM, toMetres(bed.length, (block.unit as Unit) ?? "m"))) {
+        return { ok: false, error: lengthClashMessage(input.bedLengthM, toMetres(bed.length, (block.unit as Unit) ?? "m"), bed.label) };
+      }
       const check = assignBeds({
         beds: bedSlots(db),
         occupancy: occupancyRows(db),
@@ -1278,10 +1285,23 @@ export function saveQuickPlanting(input: {
   return { ok: true, data: { id } };
 }
 
+function plantingLengthMetres(planting: { bedLengthM: number | null; bedFeet: number; bedsNeeded: number | null }): number {
+  if (planting.bedLengthM != null && planting.bedLengthM > 0) return planting.bedLengthM;
+  if (planting.bedFeet > 0) return planting.bedFeet / 3.280839895 / Math.max(1, planting.bedsNeeded ?? 1);
+  return 0;
+}
+
 export function assignPlantingBeds(plantingId: string, startBedId: string): ActionResult<{ bedIds: string[] }> {
   const db = getDb();
   const planting = db.select().from(plantings).where(eq(plantings.id, plantingId)).get();
   if (!planting) return { ok: false, error: "That planting is no longer on the plan." };
+  const target = db.select().from(beds).where(eq(beds.id, startBedId)).get();
+  const block = target ? db.select().from(blocks).where(eq(blocks.id, target.blockId)).get() : null;
+  if (target && block) {
+    const bedLengthM = toMetres(target.length, (block.unit as Unit) ?? "m");
+    const want = plantingLengthMetres(planting);
+    if (!plantingFitsBed(want, bedLengthM)) return { ok: false, error: lengthClashMessage(want, bedLengthM, target.label) };
+  }
   const decision = assignBeds({
     beds: bedSlots(db),
     occupancy: occupancyRows(db),
@@ -1305,6 +1325,59 @@ export function assignPlantingBeds(plantingId: string, startBedId: string): Acti
     tx.update(plantings).set({ bedFeet, updatedAt: now }).where(eq(plantings.id, planting.id)).run();
   });
   return { ok: true, data: { bedIds: decision.bedIds } };
+}
+
+export function shiftPlanting(id: string, days: number): ActionResult {
+  const whole = Math.round(days);
+  if (!whole) return { ok: true, data: null };
+  const db = getDb();
+  const planting = db.select().from(plantings).where(eq(plantings.id, id)).get();
+  if (!planting) return { ok: false, error: "That planting is no longer on the plan." };
+  const fieldPlantingDate = shiftIsoDate(planting.fieldPlantingDate, whole)!;
+  const firstHarvestDate = shiftIsoDate(planting.firstHarvestDate, whole)!;
+  const lastHarvestDate = shiftIsoDate(planting.lastHarvestDate, whole)!;
+  const nurseryStartDate = shiftIsoDate(planting.nurseryStartDate, whole);
+  const held = db.select().from(plantingBeds).where(eq(plantingBeds.plantingId, id)).all();
+  for (const link of held) {
+    const check = assignBeds({
+      beds: bedSlots(db),
+      occupancy: occupancyRows(db),
+      startBedId: link.bedId,
+      bedCount: 1,
+      start: fieldPlantingDate,
+      end: lastHarvestDate,
+      ignorePlantingId: id,
+    });
+    if (!check.ok) return { ok: false, error: check.message };
+  }
+  db.update(plantings)
+    .set({
+      anchorDate: fieldPlantingDate,
+      nurseryStartDate,
+      fieldPlantingDate,
+      firstHarvestDate,
+      lastHarvestDate,
+      updatedAt: stamp(),
+    })
+    .where(eq(plantings.id, id))
+    .run();
+  return { ok: true, data: null };
+}
+
+export function saveStandardBedLength(metres: number): ActionResult {
+  const length = Number(metres);
+  if (!Number.isFinite(length) || length < 0.4 || length > 200) {
+    return { ok: false, error: "Bed length needs to be between 0.4 m and 200 m." };
+  }
+  const db = getDb();
+  const existing = db.select().from(farmSettings).where(eq(farmSettings.id, "default")).get();
+  if (existing) db.update(farmSettings).set({ standardBedLengthM: length }).where(eq(farmSettings.id, "default")).run();
+  else {
+    db.insert(farmSettings)
+      .values({ id: "default", country: "GB", locationLabel: "", useManualFrost: 0, rotationYears: 3, standardBedLengthM: length })
+      .run();
+  }
+  return { ok: true, data: null };
 }
 
 export function saveRotationYears(years: number): ActionResult {

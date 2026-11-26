@@ -4,7 +4,8 @@ import { PlanWorkspace } from "@/components/veg/plan/plan-workspace";
 import { SharedBedBoard } from "@/components/shared-bed-board";
 import { todayISO } from "@/lib/veg/dates";
 import { plantingFrostWarnings } from "@/lib/veg/frost";
-import { getFrostContext, listBlocks, listCrops, listPlantings, listTasks } from "@/lib/veg/queries";
+import { standardBedLengthMetres } from "@/lib/veg/bed-length";
+import { getFarmSettings, getFrostContext, listBlocks, listCrops, listPlantings, listTasks } from "@/lib/veg/queries";
 import { getSeason } from "@/lib/veg/season";
 import { createClient } from "@/lib/supabase/server";
 import { loadSharedBoard } from "@/lib/shared-beds";
@@ -63,6 +64,7 @@ async function PlanContent({
       frost={frost}
       frostRiskIds={frostRiskIds}
       tasks={await listTasks()}
+      standardBedLengthM={standardBedLengthMetres((await getFarmSettings())?.standardBedLengthM)}
     />
     </div>
   );

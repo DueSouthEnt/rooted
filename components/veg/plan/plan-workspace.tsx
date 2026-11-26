@@ -25,6 +25,7 @@ export function PlanWorkspace({
   initialEditId,
   frost,
   tasks = [],
+  standardBedLengthM = 15,
 }: {
   crops: CropView[];
   blocks: BlockView[];
@@ -35,13 +36,13 @@ export function PlanWorkspace({
   frost: FrostContext | null;
   frostRiskIds?: string[];
   tasks?: TaskView[];
+  standardBedLengthM?: number;
 }) {
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(initialEditId);
   const [pending, startTransition] = useTransition();
   const editing = plantings.find((planting) => planting.id === editingId) ?? null;
-  const defaultLength = blocks[0] ? (blocks[0].unit === "ft" ? blocks[0].bedLength * 0.3048 : blocks[0].bedLength) : 30;
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -180,7 +181,7 @@ export function PlanWorkspace({
         season={season}
         today={today}
         frost={frost}
-        defaultBedLengthM={Math.round(defaultLength * 10) / 10}
+        defaultBedLengthM={standardBedLengthM}
       />
     </div>
   );
